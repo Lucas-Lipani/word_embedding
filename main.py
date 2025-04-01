@@ -8,13 +8,15 @@ from sklearn.cluster import KMeans
 from gensim.models import Word2Vec
 from sklearn.metrics.pairwise import cosine_similarity
 
+
+
 def initialize_graph():
 
     g = Graph(directed=False)
 
     name_prop = g.new_vertex_property("string")
     tipo_prop = g.new_vertex_property("int")
-    full_term_prop = g.new_vertex_property("string")
+    short_term_prop = g.new_vertex_property("string")
     color_prop = g.new_vertex_property("vector<double>")
     posicao_prop = g.new_vertex_property("float")
     amount_prop = g.vp["amount"] = g.new_vertex_property("int")
@@ -26,11 +28,12 @@ def initialize_graph():
     g.vp["color"] = color_prop
     g.vp["name"] = name_prop
     g.vp["tipo"] = tipo_prop
-    g.vp["full_term"] = full_term_prop
+    g.vp["short_term"] = short_term_prop
     g.vp["posicao"] = posicao_prop
     g.ep["weight"] = weight_prop
     
     return g
+
 
 def train_word2vec(df, nlp):
     sentences = []
@@ -53,6 +56,7 @@ def train_word2vec(df, nlp):
 
     return model
 
+
 def build_bipartite_graph(g, df, nlp):
     doc_vertex = {}
     term_vertex = {}
@@ -64,7 +68,7 @@ def build_bipartite_graph(g, df, nlp):
         v_doc = g.add_vertex()
         g.vp["name"][v_doc] = doc_id
         g.vp["tipo"][v_doc] = 0
-        g.vp["full_term"][v_doc] = ""
+        g.vp["short_term"][v_doc] = ""
         g.vp["posicao"][v_doc] = -2
         g.vp["size"][v_doc] = 20  # Tamanho menor para termos
         g.vp["amount"][v_doc] = 1
@@ -83,9 +87,9 @@ def build_bipartite_graph(g, df, nlp):
             term_short = term[:3]
             if term_short not in term_vertex:
                 v_term = g.add_vertex()
-                g.vp["name"][v_term] = term_short
+                g.vp["short_term"][v_term] = term_short
                 g.vp["tipo"][v_term] = 1
-                g.vp["full_term"][v_term] = term
+                g.vp["name"][v_term] = term
                 g.vp["color"][v_term] = [0.0, 0.0, 1.0, 1.0]  # Azul (RGBA)
                 g.vp["size"][v_term] = 10  # Tamanho menor para termos
                 g.vp["posicao"][v_term] = 2
@@ -104,6 +108,7 @@ def build_bipartite_graph(g, df, nlp):
                 
     return g
 
+
 def create_intermediate_graph(g, clusters):
 
     # Cria uma cópia do grafo original com todas as propriedades
@@ -115,7 +120,7 @@ def create_intermediate_graph(g, clusters):
     # Adiciona os nós de cluster com base nos clusters gerados
     for cl, term_vertices in clusters.items():
         # Define o rótulo do cluster com base nos 3 termos mais frequentes
-        terms = [(g.vp["full_term"][v], g.vp["amount"][v]) for v in term_vertices]
+        terms = [(g.vp["name"][v], g.vp["amount"][v]) for v in term_vertices]
         terms_sorted = sorted(terms, key=lambda x: x[1], reverse=True)[:3]
         rep_label = " | ".join([t[0] for t in terms_sorted])
         
@@ -123,7 +128,7 @@ def create_intermediate_graph(g, clusters):
         v_cluster = g_intermediate.add_vertex()
         g_intermediate.vp["name"][v_cluster]      = rep_label
         g_intermediate.vp["tipo"][v_cluster]      = 2  # Tipo 2 indica cluster
-        g_intermediate.vp["full_term"][v_cluster] = rep_label
+        g_intermediate.vp["name"][v_cluster] = rep_label
         g_intermediate.vp["posicao"][v_cluster]   = 0   # Posicionado no centro
         g_intermediate.vp["size"][v_cluster]      = 30  # Tamanho maior para destaque
         g_intermediate.vp["color"][v_cluster]     = [0.0, 1.0, 0.0, 1.0]  # Verde
@@ -165,6 +170,7 @@ def create_intermediate_graph(g, clusters):
 
     return g_intermediate
 
+
 def min_sbm_wew(g):
 
      # #Inferindo comunidades usando o SBM de maneira mais simples possível
@@ -185,6 +191,7 @@ def min_sbm_wew(g):
 
     return state
 
+
 def cluster_terms(g, w2v_model, n_clusters):
     cluster_prop = g.new_vertex_property("int")
     g.vp["cluster"] = cluster_prop
@@ -194,7 +201,7 @@ def cluster_terms(g, w2v_model, n_clusters):
     #Percorrer os vértices do grafo e busca no pré-processamento apenas os vetores significantes.
     for v in g.vertices():
         if int(g.vp["tipo"][v]) == 1:
-            term = g.vp["full_term"][v]
+            term = g.vp["name"][v]
             try:
                 vec = w2v_model.wv[term]
                 if np.linalg.norm(vec) > 0:
@@ -223,12 +230,13 @@ def cluster_terms(g, w2v_model, n_clusters):
     
     print("\nTermos clusterizados (Word2Vec):")
     for cl, vertices in clusters.items():
-        terms = [(g.vp["full_term"][v], g.vp["amount"][v]) for v in vertices]
+        terms = [(g.vp["name"][v], g.vp["amount"][v]) for v in vertices]
         terms_sorted = sorted(terms, key=lambda x: x[1], reverse=True)[:3]
         rep = " | ".join([t[0] for t in terms_sorted])
         print(f"Cluster {cl}: {rep}")
     
     return clusters
+
 
 def semantic_cohesion(g, clusters, w2v_model):
     print("\nCoesão Semântica dos Clusters:")
@@ -237,7 +245,7 @@ def semantic_cohesion(g, clusters, w2v_model):
     # Itera sobre cada cluster e seus vértices (termos) presentes no dicionário clusters
     for cl, term_vertices in clusters.items():
         # Cria uma lista com os termos completos de cada vértice do cluster
-        terms = [g.vp["full_term"][v] for v in term_vertices]
+        terms = [g.vp["name"][v] for v in term_vertices]
         vectors = []  # Lista para armazenar os vetores Word2Vec dos termos
 
         # Para cada termo, tenta recuperar seu vetor do modelo Word2Vec
@@ -263,8 +271,9 @@ def semantic_cohesion(g, clusters, w2v_model):
     
     return cohesion_scores
 
+
 def build_block_graph(block_graph, state, g):
-    block_graph = block_graph.copy() # Cópia para rodar o python iterativo
+    # block_graph = block_graph.copy() # Cópia para rodar o python iterativo
     # Visualizo o grafo de blocos antes das tratativas
     graph_draw(
         block_graph,
@@ -399,19 +408,20 @@ def add_cluster_nodes(g, clusters):
     g.vp["cluster_id"] = g.new_vertex_property("int")
     cluster_nodes = {}
     for cl, term_vertices in clusters.items():
-        terms = [(g.vp["full_term"][v], g.vp["amount"][v]) for v in term_vertices]
+        terms = [(g.vp["name"][v], g.vp["amount"][v]) for v in term_vertices]
         terms_sorted = sorted(terms, key=lambda x: x[1], reverse=True)[:3]
         rep_label = " | ".join([t[0] for t in terms_sorted])
         
         v_cluster = g.add_vertex()
         g.vp["name"][v_cluster] = rep_label
         g.vp["tipo"][v_cluster] = 2
-        g.vp["full_term"][v_cluster] = rep_label
+        g.vp["name"][v_cluster] = rep_label
         g.vp["posicao"][v_cluster] = 2
         g.vp["cluster_id"][v_cluster] = cl
         cluster_nodes[cl] = v_cluster
 
     return cluster_nodes
+
 
 def build_document_cluster_edges(g, cluster_nodes):
     cluster_weight_prop = g.new_edge_property("int")
@@ -436,6 +446,7 @@ def build_document_cluster_edges(g, cluster_nodes):
                 else:
                     g.ep["cluster_weight"][existing_edge] += weight_sum
 
+
 def count_term_blocks(g, state_wew):
 
     blocks = state_wew.get_blocks()  # Mapeia cada vértice ao seu bloco
@@ -448,55 +459,147 @@ def count_term_blocks(g, state_wew):
     return len(blocos_com_termo)
 
 
-def visualize_docs_and_clusters(g, cohesion_scores, output_file="outputs/docs_clusters.pdf"):
-    g_view = GraphView(g, vfilt=lambda v: int(g.vp["tipo"][v]) in [0, 2])
+# def visualize_docs_and_clusters(g, block_graph, cohesion_scores):
+#     # Filtra o grafo para retornar apenas a parte dos documentos + clusters.
+#     g_view = GraphView(g, vfilt=lambda v: int(g.vp["tipo"][v]) in [0, 2])
     
-    docs = [v for v in g_view.vertices() if int(g.vp["tipo"][v]) == 0]
-    clus = [v for v in g_view.vertices() if int(g.vp["tipo"][v]) == 2]
+#     # Posicionamento manual dos documentos à esquerda e clusters à direita
+#     doc_counter = 0
+#     cluster_counter = 0
     
-    pos = g_view.new_vertex_property("vector<double>")
+#     # Ordena os vértices para garantir consistência
+#     sorted_vertices = sorted(g_view.vertices(), key=lambda v: g.vp["name"][v])
     
-    # Posicionamento dos nós
-    n_docs = len(docs)
-    for i, v in enumerate(sorted(docs, key=lambda v: g.vp["name"][v])):
-        y = - (i - n_docs/2)
-        pos[v] = [-2, y]
+#     for v in sorted_vertices:
+#         if int(g.vp["tipo"][v]) == 0:  # Documento
+#             g_view.vp["posicao"][v] = [-2, doc_counter]
+#             doc_counter += 1
+#         else:  # Cluster
+#             g_view.vp["posicao"][v] = [2, cluster_counter]
+#             cluster_counter += 1
+
     
-    n_clus = len(clus)
-    for i, v in enumerate(sorted(clus, key=lambda v: g.vp["name"][v])):
-        y = - (i - n_clus/2)
-        pos[v] = [2, y]
+#     # Desenho do grafo
+#     graph_draw(
+#         g_view,
+#         pos=g_view.vp["posicao"],
+#         vertex_fill_color=g_view.vp["color"],
+#         vertex_size=20,
+#         vertex_text=g_view.vp["name"],
+#         vertex_text_position = -2,
+#         vertex_text_color = 'black',
+#         vertex_font_size=10,  # Tamanho da fonte dos rótulos
+#         output="outputs/graph_docs_clusters.pdf"
+#     )
+
+#     return g_view
+
+def visualize_docs_and_clusters(g, block_graph, state, output_file="outputs/graph_docs_clusters.pdf"):
+    newG = Graph(directed=False)
+    # Propriedades dos vértices no novo grafo
+    name_prop  = newG.new_vertex_property("string")
+    type_prop  = newG.new_vertex_property("int")
+    qtd_prop   = newG.new_vertex_property("int")
+    edge_weight= newG.new_edge_property("int")
+    clusterid_prop = newG.new_vertex_property("int")
+    color_prop = newG.new_vertex_property("vector<double>")
+    size_prop  = newG.new_vertex_property("double")
+    label_prop = newG.new_vertex_property("string")
     
-    # --- CORREÇÃO DEFINITIVA ---
-    vertex_text_dist = g_view.new_vertex_property("double")  # Renomeado para evitar conflito
-    for v in g_view.vertices():
+    newG.vp["color"]    = color_prop
+    newG.vp["size"]     = size_prop
+    newG.vp["cluster_id"] = clusterid_prop
+    newG.vp["amount"]   = qtd_prop
+    newG.vp["label"]    = label_prop
+    newG.vp["name"]     = name_prop
+    newG.vp["tipo"]     = type_prop
+    newG.ep["weight"]   = edge_weight
+
+    # --- 1. Adiciona os blocos de documentos do block_graph ---
+    block_vertices = {}  # chave: bloco (id), valor: vértice em newG
+    for v in block_graph.vertices():
+        if int(block_graph.vp["tipo"][v]) == 0:
+            block_id = int(v)  # Usando o índice do vértice como id do bloco
+            new_v = newG.add_vertex()
+            block_vertices[block_id] = new_v
+            name_prop[new_v]  = block_graph.vp["name"][v]
+            type_prop[new_v]  = 0
+            color_prop[new_v] = block_graph.vp["color"][v]
+            size_prop[new_v]  = block_graph.vp["size"][v]
+
+    # --- 2. Adiciona os nós de cluster (do grafo original g) ---
+    # Esses nós têm tipo == 2; agora usamos g.vp["cluster"] para recuperar o id do cluster.
+    cluster_vertices = {}  # chave: cluster label, valor: vértice em newG
+    for v in g.vertices():
         if int(g.vp["tipo"][v]) == 2:
-            vertex_text_dist[v] = 10  # Clusters
-        else:
-            vertex_text_dist[v] = 3    # Documentos
+            # Recupera o rótulo do cluster a partir da propriedade "cluster" definida na clusterização.
+            cluster_label = int(v)
+            if cluster_label not in cluster_vertices:
+                new_v = newG.add_vertex()
+                cluster_vertices[cluster_label] = new_v
+                # Aqui, copiamos o rótulo do cluster para a propriedade "cluster_id" do novo vértice.
+                clusterid_prop[new_v] = cluster_label
+                name_prop[new_v]  = g.vp["name"][v]
+                type_prop[new_v]  = 2
+                color_prop[new_v] = g.vp["color"][v]
+                size_prop[new_v]  = g.vp["size"][v]
+
+    # --- 3. Agrega as conexões entre blocos e clusters a partir do grafo original g ---
+    blocks_array = state.get_blocks().a  # Atribuição de cada vértice de g ao seu bloco
+    edge_weights = {}  # chave: (block_id, cluster_label), valor: soma dos pesos
+
+    for v in g.vertices():
+        if int(g.vp["tipo"][v]) == 0:  # Documento
+            for e in v.all_edges():
+                u = e.target() if e.source() == v else e.source()
+                if int(g.vp["tipo"][u]) == 2:  # Vizinhança é um cluster
+                    block_id = int(blocks_array[int(v)])
+                    cluster_label = int(g.vp["cluster"][u])
+                    key = (block_id, cluster_label)
+                    w = g.ep["weight"][e]
+                    edge_weights[key] = edge_weights.get(key, 0) + w
     
-    # Cores dinâmicas
-    vertex_colors = g_view.new_vertex_property("vector<double>")
-    for v in g_view.vertices():
-        if int(g.vp["tipo"][v]) == 0:
-            vertex_colors[v] = [1, 0, 0, 1]  # Vermelho para documentos
+    print(key)
+
+    # --- 4. Adiciona as arestas no novo grafo com os pesos agregados ---
+    for (block_id, cluster_label), w in edge_weights.items():
+        if block_id in block_vertices and cluster_label in cluster_vertices:
+            e = newG.edge(block_vertices[block_id], cluster_vertices[cluster_label], all_edges=False)
+            if e is None:
+                new_e = newG.add_edge(block_vertices[block_id], cluster_vertices[cluster_label])
+                edge_weight[new_e] = w
+            else:
+                edge_weight[e] += w
+
+    # --- 5. Define um layout manual: blocos à esquerda e clusters à direita ---
+    pos = newG.new_vertex_property("vector<double>")
+    doc_index = 0
+    cluster_index = 0
+    for v in newG.vertices():
+        if int(newG.vp["tipo"][v]) == 0:
+            pos[v] = [-2, doc_index]
+            doc_index += 1
         else:
-            cl = int(g.vp["cluster_id"][v])
-            intensity = cohesion_scores.get(cl, 0)
-            vertex_colors[v] = [0, intensity, 0, 1]  # Verde para clusters
-    
-    # Desenho do grafo
+            pos[v] = [2, cluster_index]
+            cluster_index += 1
+
+    vertex_size_scaled = prop_to_size(newG.vp["size"], mi=20, ma=100)
+    edge_width_scaled  = prop_to_size(newG.ep["weight"], mi=1, ma=35, power=1.0)
+
     graph_draw(
-        g_view,
+        newG,
         pos=pos,
-        vertex_fill_color=vertex_colors,
-        vertex_size=20,
-        vertex_text=g_view.vp["name"],
-        vertex_text_position = -2,
-        vertex_text_color = 'black',
-        vertex_font_size=10,  # Tamanho da fonte dos rótulos
+        vertex_fill_color=newG.vp["color"],
+        vertex_size=vertex_size_scaled,
+        vertex_text=newG.vp["name"],
+        vertex_text_position=-2,
+        vertex_text_color="black",
+        vertex_font_size=10,
+        edge_pen_width=edge_width_scaled,
         output=output_file
     )
+
+    return newG
 
 
 def main():
@@ -548,7 +651,6 @@ def main():
     #Construção do grafo de blocos
 
     block_graph = state_wew.get_bg()
-
     build_block_graph(block_graph, state_wew, g)
 
     #Verifica dos blocos gerados, quais são de termos ou não
@@ -557,6 +659,8 @@ def main():
 
     # Clusterização com Word2Vec
     clusters = cluster_terms(g, w2v_model, n_clusters=num_blocos_termo)
+
+    #Cohesion score
     cohesion_scores = semantic_cohesion(g, clusters, w2v_model)
     
     #Adicionando o cluster gerados ao grafo original, para criar uma entidade intermediária tendo a relação DOCUMENTO - CLUSTER - TERMOS
@@ -579,9 +683,10 @@ def main():
     )
 
     print("\nEtapa 3: Total de nós:", g.num_vertices())
-    exit()
     
-    visualize_docs_and_clusters(g, cohesion_scores)
+    g_doc_clust = visualize_docs_and_clusters(g_intermediate, block_graph, state_wew)
+    print(g_doc_clust)
+
     print(f"\nTempo total: {time.time() - start_time:.2f} segundos")
 
 if __name__ == "__main__":
