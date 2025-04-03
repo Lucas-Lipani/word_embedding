@@ -113,6 +113,7 @@ def create_intermediate_graph(g, clusters):
 
     # Cria uma cópia do grafo original com todas as propriedades
     g_intermediate = g.copy()
+    g_intermediate.vp["cluster_id"] = g_intermediate.new_vertex_property("int")
 
     # Mapeia os nós de cluster criados: chave = rótulo do cluster, valor = vértice no grafo intermediário
     cluster_nodes = {}
@@ -126,9 +127,9 @@ def create_intermediate_graph(g, clusters):
         
         # Adiciona o vértice de cluster ao grafo intermediário
         v_cluster = g_intermediate.add_vertex()
-        g_intermediate.vp["name"][v_cluster]      = rep_label
         g_intermediate.vp["tipo"][v_cluster]      = 2  # Tipo 2 indica cluster
         g_intermediate.vp["name"][v_cluster] = rep_label
+        g_intermediate.vp["cluster_id"][v_cluster] = cl
         g_intermediate.vp["posicao"][v_cluster]   = 0   # Posicionado no centro
         g_intermediate.vp["size"][v_cluster]      = 30  # Tamanho maior para destaque
         g_intermediate.vp["color"][v_cluster]     = [0.0, 1.0, 0.0, 1.0]  # Verde
@@ -291,7 +292,10 @@ def build_block_graph(block_graph, state, g):
     label_prop = block_graph.new_vertex_property("string")
     vertex_shape = block_graph.new_vertex_property("string")
     pos = block_graph.new_vertex_property("vector<double>")
+    block_id_prop = block_graph.new_vertex_property("int")
+
     
+    block_graph.vp["block_id"] = block_id_prop
     block_graph.vp["shape"] = vertex_shape
     block_graph.vp["color"] = color_prop
     block_graph.vp["size"] = size_prop
@@ -321,6 +325,8 @@ def build_block_graph(block_graph, state, g):
             docs = sum(1 for v in block_vertices if g.vp["tipo"][g.vertex(v)] == 0)
             
             block_graph.vp["nvertex"][i] = int(block_sizes[i])
+            # Aqui você atribui o block id à propriedade recém-criada:
+            block_graph.vp["block_id"][i] = i
             
             if terms and docs:
                 block_graph.vp["tipo"][i] = 11  # Ambos
@@ -390,7 +396,7 @@ def build_block_graph(block_graph, state, g):
     # Agora usamos a propriedade edge_pen_width na visualização
     state_bg.draw(
         pos=pos,
-        edge_pen_width= prop_to_size(block_graph.ep["weight"], mi=1, ma=35, power =1.0) ,  # Usa os pesos calculados para definir a largura das arestas block_graph.ep["weight"]
+        edge_pen_width= prop_to_size(block_graph.ep["weight"], mi=1, ma=35, power =0.5) ,  # Usa os pesos calculados para definir a largura das arestas block_graph.ep["weight"]
         vertex_fill_color=block_graph.vp["color"],  # Define a cor dos vértices
         vertex_size=prop_to_size(block_graph.vp["size"], mi=20, ma=100),  # Define o tamanho dos vértices block_graph.vp["size"]
         vertex_text=block_graph.vp["name"],  # Exibe os rótulos dos vértices
@@ -459,148 +465,106 @@ def count_term_blocks(g, state_wew):
     return len(blocos_com_termo)
 
 
-# def visualize_docs_and_clusters(g, block_graph, cohesion_scores):
-#     # Filtra o grafo para retornar apenas a parte dos documentos + clusters.
-#     g_view = GraphView(g, vfilt=lambda v: int(g.vp["tipo"][v]) in [0, 2])
-    
-#     # Posicionamento manual dos documentos à esquerda e clusters à direita
-#     doc_counter = 0
-#     cluster_counter = 0
-    
-#     # Ordena os vértices para garantir consistência
-#     sorted_vertices = sorted(g_view.vertices(), key=lambda v: g.vp["name"][v])
-    
-#     for v in sorted_vertices:
-#         if int(g.vp["tipo"][v]) == 0:  # Documento
-#             g_view.vp["posicao"][v] = [-2, doc_counter]
-#             doc_counter += 1
-#         else:  # Cluster
-#             g_view.vp["posicao"][v] = [2, cluster_counter]
-#             cluster_counter += 1
-
-    
-#     # Desenho do grafo
-#     graph_draw(
-#         g_view,
-#         pos=g_view.vp["posicao"],
-#         vertex_fill_color=g_view.vp["color"],
-#         vertex_size=20,
-#         vertex_text=g_view.vp["name"],
-#         vertex_text_position = -2,
-#         vertex_text_color = 'black',
-#         vertex_font_size=10,  # Tamanho da fonte dos rótulos
-#         output="outputs/graph_docs_clusters.pdf"
-#     )
-
-#     return g_view
-
 def visualize_docs_and_clusters(g, block_graph, state, output_file="outputs/graph_docs_clusters.pdf"):
     newG = Graph(directed=False)
-    # Propriedades dos vértices no novo grafo
-    name_prop  = newG.new_vertex_property("string")
-    type_prop  = newG.new_vertex_property("int")
-    qtd_prop   = newG.new_vertex_property("int")
-    edge_weight= newG.new_edge_property("int")
-    clusterid_prop = newG.new_vertex_property("int")
-    color_prop = newG.new_vertex_property("vector<double>")
-    size_prop  = newG.new_vertex_property("double")
-    label_prop = newG.new_vertex_property("string")
     
-    newG.vp["color"]    = color_prop
-    newG.vp["size"]     = size_prop
+    # Declaração explícita das propriedades
+    name_prop = newG.new_vertex_property("string")
+    type_prop = newG.new_vertex_property("int")
+    clusterid_prop = newG.new_vertex_property("int")
+    blockid_prop = newG.new_vertex_property("int")
+    color_prop = newG.new_vertex_property("vector<double>")
+    size_prop = newG.new_vertex_property("double")
+    edge_weight = newG.new_edge_property("int")
+    pos_prop = newG.new_vertex_property("vector<double>")
+    
+    # Vinculação das propriedades
+    newG.vp["name"] = name_prop
+    newG.vp["tipo"] = type_prop
     newG.vp["cluster_id"] = clusterid_prop
-    newG.vp["amount"]   = qtd_prop
-    newG.vp["label"]    = label_prop
-    newG.vp["name"]     = name_prop
-    newG.vp["tipo"]     = type_prop
-    newG.ep["weight"]   = edge_weight
+    newG.vp["block_id"] = blockid_prop
+    newG.vp["color"] = color_prop
+    newG.vp["size"] = size_prop
+    newG.vp["pos"] = pos_prop
+    newG.ep["weight"] = edge_weight
 
-    # --- 1. Adiciona os blocos de documentos do block_graph ---
-    block_vertices = {}  # chave: bloco (id), valor: vértice em newG
+    # --- 1. Adiciona blocos de documentos ---
+    # Usamos a propriedade "block_id" do block_graph, que deve ter sido definida anteriormente
+    block_vertices = {}
     for v in block_graph.vertices():
         if int(block_graph.vp["tipo"][v]) == 0:
-            block_id = int(v)  # Usando o índice do vértice como id do bloco
+            # Recupera o block id original a partir da propriedade "block_id"
+            block_id = int(block_graph.vp["block_id"][v])
             new_v = newG.add_vertex()
+            newG.vp["block_id"][new_v] = block_id
             block_vertices[block_id] = new_v
-            name_prop[new_v]  = block_graph.vp["name"][v]
-            type_prop[new_v]  = 0
-            color_prop[new_v] = block_graph.vp["color"][v]
-            size_prop[new_v]  = block_graph.vp["size"][v]
-
-    # --- 2. Adiciona os nós de cluster (do grafo original g) ---
-    # Esses nós têm tipo == 2; agora usamos g.vp["cluster"] para recuperar o id do cluster.
-    cluster_vertices = {}  # chave: cluster label, valor: vértice em newG
+            newG.vp["name"][new_v] = block_graph.vp["name"][v]
+            newG.vp["tipo"][new_v] = 0
+            newG.vp["color"][new_v] = [1.0, 0.0, 0.0, 1.0]  # Vermelho
+            newG.vp["size"][new_v] = block_graph.vp["size"][v]
+    
+    # --- 2. Adiciona clusters ---
+    cluster_vertices = {}
     for v in g.vertices():
         if int(g.vp["tipo"][v]) == 2:
-            # Recupera o rótulo do cluster a partir da propriedade "cluster" definida na clusterização.
-            cluster_label = int(v)
-            if cluster_label not in cluster_vertices:
-                new_v = newG.add_vertex()
-                cluster_vertices[cluster_label] = new_v
-                # Aqui, copiamos o rótulo do cluster para a propriedade "cluster_id" do novo vértice.
-                clusterid_prop[new_v] = cluster_label
-                name_prop[new_v]  = g.vp["name"][v]
-                type_prop[new_v]  = 2
-                color_prop[new_v] = g.vp["color"][v]
-                size_prop[new_v]  = g.vp["size"][v]
-
-    # --- 3. Agrega as conexões entre blocos e clusters a partir do grafo original g ---
-    blocks_array = state.get_blocks().a  # Atribuição de cada vértice de g ao seu bloco
-    edge_weights = {}  # chave: (block_id, cluster_label), valor: soma dos pesos
-
-    for v in g.vertices():
-        if int(g.vp["tipo"][v]) == 0:  # Documento
-            for e in v.all_edges():
-                u = e.target() if e.source() == v else e.source()
-                if int(g.vp["tipo"][u]) == 2:  # Vizinhança é um cluster
-                    block_id = int(blocks_array[int(v)])
-                    cluster_label = int(g.vp["cluster"][u])
-                    key = (block_id, cluster_label)
-                    w = g.ep["weight"][e]
-                    edge_weights[key] = edge_weights.get(key, 0) + w
+            # Recupera o cluster_id da propriedade "cluster_id" definida no grafo g
+            cluster_id = int(g.vp["cluster_id"][v])
+            new_v = newG.add_vertex()
+            cluster_vertices[cluster_id] = new_v
+            newG.vp["name"][new_v] = g.vp["name"][v]
+            newG.vp["tipo"][new_v] = 2
+            newG.vp["color"][new_v] = [0.0, 1.0, 0.0, 1.0]  # Verde
+            newG.vp["size"][new_v] = g.vp["size"][v]
+            newG.vp["cluster_id"][new_v] = cluster_id
     
-    print(key)
-
-    # --- 4. Adiciona as arestas no novo grafo com os pesos agregados ---
-    for (block_id, cluster_label), w in edge_weights.items():
-        if block_id in block_vertices and cluster_label in cluster_vertices:
-            e = newG.edge(block_vertices[block_id], cluster_vertices[cluster_label], all_edges=False)
-            if e is None:
-                new_e = newG.add_edge(block_vertices[block_id], cluster_vertices[cluster_label])
-                edge_weight[new_e] = w
-            else:
-                edge_weight[e] += w
-
-    # --- 5. Define um layout manual: blocos à esquerda e clusters à direita ---
-    pos = newG.new_vertex_property("vector<double>")
-    doc_index = 0
-    cluster_index = 0
+    # --- 3. Conecta blocos a clusters ---
+    blocks = state.get_blocks().a  # Vetor onde cada vértice de g tem seu block id
+    for doc in g.vertices():
+        if int(g.vp["tipo"][doc]) == 0:  # Documentos
+            # Recupera o block id do documento; usamos o índice do vértice no vetor blocks
+            block_id = int(blocks[int(doc)])
+            if block_id in block_vertices:
+                for e in doc.all_edges():
+                    neighbor = e.target() if e.source() == doc else e.source()
+                    if int(g.vp["tipo"][neighbor]) == 2:  # Verifica se o vizinho é um cluster
+                        cluster_id = int(g.vp["cluster_id"][neighbor])
+                        if cluster_id in cluster_vertices:
+                            src = block_vertices[block_id]
+                            tgt = cluster_vertices[cluster_id]
+                            existing_edge = newG.edge(src, tgt)
+                            if existing_edge is None:
+                                new_edge = newG.add_edge(src, tgt)
+                                newG.ep["weight"][new_edge] = g.ep["weight"][e]
+                            else:
+                                newG.ep["weight"][existing_edge] += g.ep["weight"][e]
+    
+    # --- 4. Layout manual ---
+    doc_counter = 0
+    cluster_counter = 0
     for v in newG.vertices():
-        if int(newG.vp["tipo"][v]) == 0:
-            pos[v] = [-2, doc_index]
-            doc_index += 1
-        else:
-            pos[v] = [2, cluster_index]
-            cluster_index += 1
+        if newG.vp["tipo"][v] == 0:  # Documentos
+            newG.vp["pos"][v] = [-2, doc_counter]
+            doc_counter += 1
+        else:  # Clusters
+            newG.vp["pos"][v] = [2, cluster_counter]
+            cluster_counter += 1
 
-    vertex_size_scaled = prop_to_size(newG.vp["size"], mi=20, ma=100)
-    edge_width_scaled  = prop_to_size(newG.ep["weight"], mi=1, ma=35, power=1.0)
-
+    # --- 5. Visualização ---
     graph_draw(
         newG,
-        pos=pos,
+        pos=newG.vp["pos"],
         vertex_fill_color=newG.vp["color"],
-        vertex_size=vertex_size_scaled,
+        vertex_size=prop_to_size(newG.vp["size"], mi=20, ma=100),
         vertex_text=newG.vp["name"],
         vertex_text_position=-2,
         vertex_text_color="black",
         vertex_font_size=10,
-        edge_pen_width=edge_width_scaled,
+        edge_pen_width=prop_to_size(newG.ep["weight"], mi=1, ma=35, power=0.5),
+        output_size=(800, 800),
         output=output_file
     )
 
     return newG
-
 
 def main():
     start_time = time.time()
@@ -611,22 +575,6 @@ def main():
     
     # Treinar Word2Vec
     w2v_model = train_word2vec(df, nlp)
-
-    # # Pegar as 5 primeiras palavras do vocabulário
-    # words = list(w2v_model.wv.index_to_key)[:5]
-
-    # # Para cada palavra, imprimir as 5 mais similares
-    # for word in words:
-    #     print(f"Palavra: {word}")
-    #     print("5 palavras mais similares:")
-
-    #     # Encontrar as 5 palavras mais similares
-    #     similar_words = w2v_model.wv.most_similar(word, topn=5)
-        
-    #     for similar_word, similarity in similar_words:
-    #         print(f"    - {similar_word} (similaridade: {similarity:.4f})")
-
-    #     print("-" * 50)
     
     # Construir grafo
     g = initialize_graph()
@@ -643,8 +591,6 @@ def main():
     vertex_fill_color=g.vp["color"],  # Define a cor dos vértices
     output="outputs/bipartite_graph.pdf"  # Salva a visualização em PDF
     )
-    # print("\nEtapa 1: Total de nós:", g.num_vertices())
-    # print("Etapa 1: Arestas:", g.num_edges())
 
     # Aplicação do sbm com a propriedade de peso nas arestas
     state_wew = min_sbm_wew(g)
