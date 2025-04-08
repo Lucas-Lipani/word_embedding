@@ -1,8 +1,9 @@
 import time
 import spacy
 import pandas as pd
+import matplotlib.pyplot as plt
 import numpy as np
-from graph_tool.all import (Graph,prop_to_size, graph_draw, sfdp_layout, GraphView, minimize_blockmodel_dl)
+from graph_tool.all import (Graph, prop_to_size, graph_draw, sfdp_layout, GraphView, minimize_blockmodel_dl)
 from tqdm import tqdm
 from sklearn.cluster import KMeans
 from gensim.models import Word2Vec
@@ -11,7 +12,11 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 
 def initialize_graph():
-
+    """
+    Inicializa e configura um grafo não direcionado com as propriedades básicas para o projeto Sashimi.
+    
+    :return: Um objeto Graph com propriedades de vértice (name, tipo, short_term, color, posicao, amount, size) e de aresta (weight) definidas.
+    """
     g = Graph(directed=False)
 
     name_prop = g.new_vertex_property("string")
@@ -36,6 +41,13 @@ def initialize_graph():
 
 
 def train_word2vec(df, nlp):
+    """
+    Processa os abstracts do corpus e treina um modelo Word2Vec usando os tokens obtidos.
+    
+    :param df: DataFrame contendo uma coluna "abstract" com os textos a serem processados.
+    :param nlp: Tokenizer do spaCy (por exemplo, "en_core_web_sm") para processar os textos e remover stop words e pontuações.
+    :return: Um modelo Word2Vec treinado com os tokens extraídos dos abstracts.
+    """
     sentences = []
     for abstract in tqdm(df["abstract"], desc="Pré-processamento para Word2Vec"):
         doc = nlp(abstract)
@@ -58,6 +70,14 @@ def train_word2vec(df, nlp):
 
 
 def build_bipartite_graph(g, df, nlp):
+    """
+    Constrói um grafo bipartido relacionando documentos e termos a partir dos abstracts do corpus.
+    
+    :param g: Objeto Graph vazio com propriedades pré-definidas, onde serão inseridos os vértices de documentos e termos.
+    :param df: DataFrame contendo os abstracts dos documentos que serão processados.
+    :param nlp: Tokenizer do spaCy para processar os abstracts, removendo stop words e pontuações.
+    :return: Grafo bipartido com vértices representando DOCUMENTOS e TERMOS, e arestas ponderadas pela frequência dos termos.
+    """
     doc_vertex = {}
     term_vertex = {}
     
@@ -110,7 +130,13 @@ def build_bipartite_graph(g, df, nlp):
 
 
 def create_intermediate_graph(g, clusters):
-
+    """
+    Cria um grafo intermediário que incorpora clusters de termos entre documentos e termos.
+    
+    :param g: Grafo bipartido original com relação DOCUMENTOS - TERMOS.
+    :param clusters: Dicionário onde as chaves são os rótulos dos clusters e os valores são listas de vértices de termos pertencentes a cada cluster.
+    :return: Novo grafo que estabelece a relação DOCUMENTOS - CLUSTERS - TERMOS, com vértices adicionais para os clusters.
+    """
     # Cria uma cópia do grafo original com todas as propriedades
     g_intermediate = g.copy()
     g_intermediate.vp["cluster_id"] = g_intermediate.new_vertex_property("int")
@@ -173,8 +199,13 @@ def create_intermediate_graph(g, clusters):
 
 
 def min_sbm_wew(g):
-
-     # #Inferindo comunidades usando o SBM de maneira mais simples possível
+    """
+    Aplica o SBM (Stochastic Block Model) no grafo bipartido DOCUMENTO - TERMOS para identificar comunidades.
+    
+    :param g: Grafo bipartido com a relação DOCUMENTOS - TERMOS, contendo arestas com pesos.
+    :return: Objeto BlockState resultante da aplicação do SBM, representando a partição de comunidades no grafo.
+    """
+    # Inferindo comunidades usando o SBM de maneira mais simples possível
     state = minimize_blockmodel_dl(g, state_args={"eweight": g.ep["weight"], "pclabel": g.vp["tipo"]})
 
     # Desenhar as comunidades inferidas com as per'sonalizações
@@ -194,12 +225,20 @@ def min_sbm_wew(g):
 
 
 def cluster_terms(g, w2v_model, n_clusters):
+    """
+    Realiza a clusterização dos termos do grafo utilizando os vetores semânticos do modelo Word2Vec.
+    
+    :param g: Grafo bipartido com a relação DOCUMENTOS - TERMOS.
+    :param w2v_model: Modelo Word2Vec previamente treinado, usado para extrair vetores semânticos de termos.
+    :param n_clusters: Número de clusters a serem formados, geralmente definido a partir do número de comunidades identificadas pelo SBM.
+    :return: Dicionário onde as chaves são os rótulos dos clusters e os valores são listas de vértices (termos) que pertencem a cada cluster.
+    """
     cluster_prop = g.new_vertex_property("int")
     g.vp["cluster"] = cluster_prop
 
     term_indices = []
     term_vectors = []
-    #Percorrer os vértices do grafo e busca no pré-processamento apenas os vetores significantes.
+    # Percorrer os vértices do grafo e buscar os vetores significativos de termos.
     for v in g.vertices():
         if int(g.vp["tipo"][v]) == 1:
             term = g.vp["name"][v]
@@ -240,6 +279,14 @@ def cluster_terms(g, w2v_model, n_clusters):
 
 
 def semantic_cohesion(g, clusters, w2v_model):
+    """
+    Calcula e exibe a coesão semântica de cada cluster com base na similaridade dos vetores Word2Vec dos termos.
+    
+    :param g: Grafo bipartido com a relação DOCUMENTOS - TERMOS.
+    :param clusters: Dicionário de clusters de termos (chave: rótulo do cluster, valor: lista de vértices de termos).
+    :param w2v_model: Modelo Word2Vec treinado, usado para acessar os vetores semânticos dos termos.
+    :return: Dicionário onde as chaves são os rótulos dos clusters e os valores são as médias de similaridade (coesão) dos termos no cluster.
+    """
     print("\nCoesão Semântica dos Clusters:")
     cohesion_scores = {}  # Dicionário para armazenar a coesão de cada cluster
 
@@ -274,6 +321,15 @@ def semantic_cohesion(g, clusters, w2v_model):
 
 
 def build_block_graph(block_graph, state, g):
+    """
+    Configura e visualiza o grafo de blocos que representa a conexão entre comunidades de DOCUMENTOS e TERMOS, 
+    a partir do resultado da aplicação do SBM.
+    
+    :param block_graph: Grafo de blocos obtido através do método .bg() no objeto state do SBM.
+    :param state: Objeto BlockState resultante da aplicação do SBM no grafo original.
+    :param g: Grafo bipartido original com a relação DOCUMENTOS - TERMOS.
+    :return: (Não há retorno explícito; a função gera visualizações e altera as propriedades do block_graph.)
+    """
     # block_graph = block_graph.copy() # Cópia para rodar o python iterativo
     # Visualizo o grafo de blocos antes das tratativas
     graph_draw(
@@ -410,26 +466,14 @@ def build_block_graph(block_graph, state, g):
     # return block_to_vertices
 
 
-def add_cluster_nodes(g, clusters):
-    g.vp["cluster_id"] = g.new_vertex_property("int")
-    cluster_nodes = {}
-    for cl, term_vertices in clusters.items():
-        terms = [(g.vp["name"][v], g.vp["amount"][v]) for v in term_vertices]
-        terms_sorted = sorted(terms, key=lambda x: x[1], reverse=True)[:3]
-        rep_label = " | ".join([t[0] for t in terms_sorted])
-        
-        v_cluster = g.add_vertex()
-        g.vp["name"][v_cluster] = rep_label
-        g.vp["tipo"][v_cluster] = 2
-        g.vp["name"][v_cluster] = rep_label
-        g.vp["posicao"][v_cluster] = 2
-        g.vp["cluster_id"][v_cluster] = cl
-        cluster_nodes[cl] = v_cluster
-
-    return cluster_nodes
-
-
 def build_document_cluster_edges(g, cluster_nodes):
+    """
+    Adiciona arestas que conectam documentos a clusters, acumulando os pesos a partir das conexões DOCUMENTO - TERMO.
+    
+    :param g: Grafo contendo vértices de documentos e termos, com a propriedade 'cluster' definida para termos.
+    :param cluster_nodes: Dicionário mapeando o rótulo do cluster para o vértice correspondente no grafo.
+    :return: (Não há retorno; as arestas com a propriedade "cluster_weight" são adicionadas ao grafo g.)
+    """
     cluster_weight_prop = g.new_edge_property("int")
     g.ep["cluster_weight"] = cluster_weight_prop
     
@@ -454,7 +498,13 @@ def build_document_cluster_edges(g, cluster_nodes):
 
 
 def count_term_blocks(g, state_wew):
-
+    """
+    Conta quantos blocos (comunidades) identificados pelo SBM contêm pelo menos um vértice do tipo TERMO.
+    
+    :param g: Grafo bipartido com a relação DOCUMENTOS - TERMOS.
+    :param state_wew: Objeto BlockState resultante da aplicação do SBM no grafo g.
+    :return: Número de blocos que contêm vértices do tipo TERMO.
+    """
     blocks = state_wew.get_blocks()  # Mapeia cada vértice ao seu bloco
     blocos_com_termo = set()
 
@@ -465,7 +515,15 @@ def count_term_blocks(g, state_wew):
     return len(blocos_com_termo)
 
 
-def visualize_docs_and_clusters(g, block_graph, state, output_file="outputs/graph_docs_clusters.pdf"):
+def visualize_docs_and_clusters(g, block_graph, state):
+    """
+    Cria e retorna um novo grafo que representa a conexão entre comunidades de DOCUMENTOS e clusters de TERMOS.
+    
+    :param g: Grafo intermediário com a relação DOCUMENTOS - CLUSTERS - TERMOS.
+    :param block_graph: Block graph obtido a partir do SBM, contendo propriedades sobre os blocos de documentos.
+    :param state: Objeto BlockState resultante da aplicação do SBM no grafo original.
+    :return: Novo objeto Graph representando a conexão entre comunidades de DOCUMENTOS e clusters de TERMOS.
+    """   
     newG = Graph(directed=False)
     
     # Declaração explícita das propriedades
@@ -549,7 +607,7 @@ def visualize_docs_and_clusters(g, block_graph, state, output_file="outputs/grap
             newG.vp["pos"][v] = [2, cluster_counter]
             cluster_counter += 1
 
-    # --- 5. Visualização ---
+    # # --- 5. Visualização ---
     graph_draw(
         newG,
         pos=newG.vp["pos"],
@@ -561,10 +619,196 @@ def visualize_docs_and_clusters(g, block_graph, state, output_file="outputs/grap
         vertex_font_size=10,
         edge_pen_width=prop_to_size(newG.ep["weight"], mi=1, ma=35, power=0.5),
         output_size=(800, 800),
-        output=output_file
+        output="outputs/graph_docs_clusters.pdf"
     )
 
     return newG
+
+def cluster_analyse(clusters, cohesion_scores, g):
+    """
+    Gera um gráfico e exibe um resumo dos clusters de termos, incluindo um rótulo representativo, quantidade de termos, 
+    frequência acumulada e coesão semântica média.
+    
+    :param clusters: Dicionário contendo os clusters de termos (chave: ID do cluster, valor: lista de vértices de termos).
+    :param cohesion_scores: Dicionário com a coesão semântica média para cada cluster.
+    :param g: Grafo intermediário contendo a relação DOCUMENTOS - CLUSTERS - TERMOS.
+    :return: (Não há retorno; a função exibe um DataFrame com o resumo dos clusters e gera um gráfico de coesão.)
+    """
+    cluster_summary = []
+    for cl, vertices in clusters.items():
+        # Rótulo representativo: 3 termos com maior frequência
+        termos = [(g.vp["name"][v], g.vp["amount"][v]) for v in vertices]
+        termos_ordenados = sorted(termos, key=lambda x: x[1], reverse=True)
+        rep_label = " | ".join([t[0] for t in termos_ordenados[:3]])
+        
+        # Número de termos e frequência acumulada
+        num_termos = len(vertices)
+        freq_total = sum(g.vp["amount"][v] for v in vertices)
+        
+        # Coesão semântica do cluster
+        coesao = cohesion_scores.get(cl, 0)
+        
+        cluster_summary.append({
+            "Cluster": cl,
+            "Label": rep_label,
+            "Num_Termos": num_termos,
+            "Freq_Total": freq_total,
+            "Coesao": coesao
+        })
+
+    df_clusters = pd.DataFrame(cluster_summary)
+    print(df_clusters)
+
+    # Ordenando os clusters para visualização
+    df_clusters = df_clusters.sort_values("Coesao", ascending=False)
+
+    plt.figure(figsize=(10, 6))
+    plt.bar(df_clusters["Label"], df_clusters["Coesao"], color="skyblue")
+    plt.xticks(rotation=45, ha="right")
+    plt.xlabel("Rótulo do Cluster (3 termos mais frequentes)")
+    plt.ylabel("Coesão Semântica Média")
+    plt.title("Coesão Semântica por Cluster (Word2Vec)")
+    plt.tight_layout()
+    plt.savefig("outputs/coesao_clusters.png")  # Salva o gráfico como PNG
+    # plt.show()
+
+
+def calculate_centroid(cluster, w2v_model, g):
+    """
+    Calcula o centróide de um cluster de termos usando a média dos vetores Word2Vec correspondentes.
+    
+    :param cluster: Lista de vértices pertencentes ao cluster.
+    :param w2v_model: Modelo Word2Vec treinado utilizado para obter os vetores dos termos.
+    :param g: Grafo que contém os termos associados aos vértices.
+    :return: Vetor (numpy array) representando o centróide do cluster ou None se nenhum vetor foi encontrado.
+    """
+    vectors = []
+    for v in cluster:
+        term = g.vp["name"][v]
+        try:
+            vec = w2v_model.wv[term]
+            vectors.append(vec)
+        except KeyError:
+            continue
+    if vectors:
+        centroid = np.mean(vectors, axis=0)
+        return centroid
+    return None
+
+
+def find_central_term(cluster, centroid, w2v_model, g):
+    """
+    Identifica o termo mais central do cluster, isto é, aquele cujo vetor Word2Vec possui maior similaridade com o centróide.
+    
+    :param cluster: Lista de vértices pertencentes ao cluster.
+    :param centroid: Vetor do centróide do cluster.
+    :param w2v_model: Modelo Word2Vec treinado para acesso aos vetores dos termos.
+    :param g: Grafo contendo os termos.
+    :return: Uma tupla (termo_central, similaridade) onde termo_central é a palavra mais próxima do centróide e similaridade é sua similaridade, ou (None, 0) se não encontrado.
+    """
+    best_term = None
+    best_sim = -1
+    centroid = centroid.reshape(1, -1)
+    for v in cluster:
+        term = g.vp["name"][v]
+        try:
+            vec = w2v_model.wv[term].reshape(1, -1)
+            sim = cosine_similarity(vec, centroid)[0][0]
+            if sim > best_sim:
+                best_sim = sim
+                best_term = term
+        except KeyError:
+            continue
+    return best_term, best_sim
+
+
+def find_sbm_block(term, g, state_wew):
+    """
+    Busca o vértice correspondente a um termo no grafo e retorna o bloco (comunidade) associado segundo o resultado do SBM.
+    
+    :param term: String representando o termo de interesse.
+    :param g: Grafo original onde cada vértice possui a propriedade 'name'.
+    :param state_wew: Objeto BlockState resultante do SBM (minimize_blockmodel_dl) aplicado ao grafo.
+    :return: Número do bloco (comunidade) associado ao termo ou None se o termo não for encontrado.
+    """
+    blocks = state_wew.get_blocks().a  # vetor de blocos para cada vértice
+    for v in g.vertices():
+        if g.vp["name"][v] == term:
+            return int(blocks[int(v)])
+    return None
+
+
+def compare_clusters_sbm(clusters, cohesion_scores, g, w2v_model, state_wew):
+    """
+    Compara os clusters obtidos via Word2Vec com os blocos gerados pelo SBM, gerando um resumo que inclui o termo central e o bloco correspondente.
+    
+    :param clusters: Dicionário com os clusters de termos (chave: ID do cluster, valor: lista de vértices).
+    :param cohesion_scores: Dicionário contendo os valores de coesão semântica para cada cluster.
+    :param g: Grafo que contém os termos e suas propriedades.
+    :param w2v_model: Modelo Word2Vec treinado para obtenção dos vetores dos termos.
+    :param state_wew: Objeto BlockState resultante do SBM aplicado ao grafo original.
+    :return: DataFrame contendo um resumo comparativo dos clusters (rótulo, número de termos, frequência, coesão, termo central, similaridade central e bloco SBM).
+    """
+    summary = []
+    for cl, vertices in clusters.items():
+        # Rótulo representativo
+        termos = [(g.vp["name"][v], g.vp["amount"][v]) for v in vertices]
+        termos_ordenados = sorted(termos, key=lambda x: x[1], reverse=True)
+        rep_label = " | ".join([t[0] for t in termos_ordenados[:3]])
+        
+        # Número de termos e soma das frequências
+        num_termos = len(vertices)
+        freq_total = sum(g.vp["amount"][v] for v in vertices)
+        
+        # Coesão semântica já calculada
+        coesao = cohesion_scores.get(cl, 0)
+        
+        # Cálculo do centróide do cluster
+        centroid = calculate_centroid(vertices, w2v_model, g)
+        if centroid is not None:
+            central_term, central_sim = find_central_term(vertices, centroid, w2v_model, g)
+        else:
+            central_term, central_sim = None, 0
+        
+        # Mapeamento do termo central para bloco SBM
+        if central_term is not None:
+            sbm_block = find_sbm_block(central_term, g, state_wew)
+        else:
+            sbm_block = None
+        
+        summary.append({
+            "Cluster ID": cl,
+            "Label": rep_label,
+            "Num_Termos": num_termos,
+            "Freq_Total": freq_total,
+            "Coesao": coesao,
+            "Termo Central": central_term,
+            "Simil Central": central_sim,
+            "SBM Block": sbm_block
+        })
+    
+    df_summary = pd.DataFrame(summary)
+    print(df_summary)
+    return df_summary
+
+
+def plot_central_similarity(df_summary):
+    """
+    Plota um gráfico de barras mostrando a similaridade do termo central com o centróide para cada cluster.
+    
+    :param df_summary: DataFrame que contém, entre outras colunas, 'Label' e 'Simil Central', resultante da função compare_clusters_sbm.
+    :return: (Não há retorno; a função exibe e salva o gráfico gerado.)
+    """
+    plt.figure(figsize=(10, 6))
+    plt.bar(df_summary["Label"], df_summary["Simil Central"], color="coral")
+    plt.xticks(rotation=45, ha="right")
+    plt.xlabel("Rótulo do Cluster (3 termos mais frequentes)")
+    plt.ylabel("Similaridade do Termo Central com o Centróide")
+    plt.title("Similaridade Central dos Clusters")
+    plt.tight_layout()
+    plt.savefig("outputs/similarity_central.png")
+    # plt.show()
+
 
 def main():
     start_time = time.time()
@@ -575,12 +819,31 @@ def main():
     
     # Treinar Word2Vec
     w2v_model = train_word2vec(df, nlp)
+
+    '''
+    # Pegar as 5 primeiras palavras do vocabulário
+    words = list(w2v_model.wv.index_to_key)[:5]
+
+    # Para cada palavra, imprimir as 5 mais similares
+    for word in words:
+        print(f"Palavra: {word}")
+        print("5 palavras mais similares:")
+
+        # Encontrar as 5 palavras mais similares
+        similar_words = w2v_model.wv.most_similar(word, topn=5)
+        
+        for similar_word, similarity in similar_words:
+            print(f"    - {similar_word} (similaridade: {similarity:.4f})")
+
+        print("-" * 50)
+    '''
     
     # Construir grafo
     g = initialize_graph()
     g = build_bipartite_graph(g, df, nlp)
     print(g)
 
+    # Salva o grafo original DOCUMENTO - TERMOS
     graph_draw(
     g,
     pos=sfdp_layout(g),           # Layout para posicionar os nós
@@ -594,8 +857,8 @@ def main():
 
     # Aplicação do sbm com a propriedade de peso nas arestas
     state_wew = min_sbm_wew(g)
-    #Construção do grafo de blocos
 
+    #Construção do grafo de blocos
     block_graph = state_wew.get_bg()
     build_block_graph(block_graph, state_wew, g)
 
@@ -606,18 +869,20 @@ def main():
     # Clusterização com Word2Vec
     clusters = cluster_terms(g, w2v_model, n_clusters=num_blocos_termo)
 
-    #Cohesion score
+    # Cohesion score
     cohesion_scores = semantic_cohesion(g, clusters, w2v_model)
+
+    # Comparação entre o número de blocos de termos identificados pelo SBM e os clusters formados via Word2Vec.
+    cluster_analyse(clusters, cohesion_scores, g)
+
+    df_comparison = compare_clusters_sbm(clusters, cohesion_scores, g, w2v_model, state_wew)
+    df_comparison.to_csv("outputs/cluster_sbm_comparison.csv", index=False)
+    plot_central_similarity(df_comparison)
     
-    #Adicionando o cluster gerados ao grafo original, para criar uma entidade intermediária tendo a relação DOCUMENTO - CLUSTER - TERMOS
-    
-    # #Aonde o label de cada cluster será os 3 primeiros termos mais frequentes
-    # cluster_nodes = add_cluster_nodes(g, clusters)  #Função comentada por hora, pois essa operação é feita ao desenhar o grafo intermidiário.
-    
-    # Cria o grafo intermediário com os nós de cluster centralizados
+    # Adicionando os clusters gerados ao grafo original, criando uma entidade intermediária com a relação DOCUMENTO - CLUSTER - TERMOS
     g_intermediate = create_intermediate_graph(g, clusters)
 
-    # Salva e/ou visualiza o grafo intermediário
+    # Salva o grafo intermediário DOCUMENTO - CLUSTER - TERMOS
     graph_draw(
         g_intermediate,
         vertex_text=g_intermediate.vp["name"],
@@ -628,10 +893,9 @@ def main():
         output="outputs/grafo_intermediario.pdf"
     )
 
-    print("\nEtapa 3: Total de nós:", g.num_vertices())
-    
+    # Gerar o grafo COMUNIDADE DE DOCUMENTOS - CLUSTERS
     g_doc_clust = visualize_docs_and_clusters(g_intermediate, block_graph, state_wew)
-    print(g_doc_clust)
+    print(g_doc_clust)  # Grafo comunidade de documentos <-> cluster de termos
 
     print(f"\nTempo total: {time.time() - start_time:.2f} segundos")
 
