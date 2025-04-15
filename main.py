@@ -2,12 +2,17 @@ import time
 import spacy
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')  # Usa backend para salvar arquivos, sem abrir janelas
+import seaborn as sns
+import matplotlib.pyplot as plt
 import numpy as np
-from graph_tool.all import (Graph, prop_to_size, graph_draw, sfdp_layout, GraphView, minimize_blockmodel_dl)
+from graph_tool.all import (Graph, prop_to_size, graph_draw, sfdp_layout, GraphView, minimize_blockmodel_dl, variation_information, mutual_information, partition_overlap)
 from tqdm import tqdm
 from sklearn.cluster import KMeans
 from gensim.models import Word2Vec
 from sklearn.metrics.pairwise import cosine_similarity
+from collections import Counter
 
 
 
@@ -627,7 +632,7 @@ def visualize_docs_and_clusters(g, block_graph, state):
 def cluster_analyse(clusters, cohesion_scores, g):
     """
     Gera um gráfico e exibe um resumo dos clusters de termos, incluindo um rótulo representativo, quantidade de termos, 
-    frequência acumulada e coesão semântica média.
+    frequência acumulada e coesão semântica média (o quanto semanticamente próximos são os termos desse clusters).
     
     :param clusters: Dicionário contendo os clusters de termos (chave: ID do cluster, valor: lista de vértices de termos).
     :param cohesion_scores: Dicionário com a coesão semântica média para cada cluster.
@@ -809,6 +814,101 @@ def plot_central_similarity(df_summary):
     plt.savefig("outputs/similarity_central.png")
     # plt.show()
 
+def compare_partitions_sbm_word2vec(g, state_wew):
+    """
+    Compara os blocos do SBM com os clusters de termos via métricas da graph_tool.
+    Considera apenas os vértices do tipo termo.
+    """
+    sbm_blocks = []
+    w2v_clusters = []
+
+    blocks_array = state_wew.get_blocks().a
+    cluster_map = g.vp["cluster"].a  # já é uma numpy array se definido com new_vertex_property
+
+    for v in g.vertices():
+        if int(g.vp["tipo"][v]) == 1:  # Apenas TERMOS
+            sbm_blocks.append(int(blocks_array[int(v)]))
+            w2v_clusters.append(int(cluster_map[int(v)]))
+
+    # Conversão para arrays do Graph-Tool (se necessário)
+    sbm_blocks = np.array(sbm_blocks)
+    w2v_clusters = np.array(w2v_clusters)
+
+    # Cálculo das métricas
+
+    # Mede o quanto as partições são diferentes. Quanto maior o valor, mais distintas são as segmentações de SBM e Word2Vec.
+    vi = variation_information(sbm_blocks, w2v_clusters)  
+    # Mede quanta informação uma partição revela sobre a outra. Valores mais altos indicam maior sobreposição entre os agrupamentos.
+    mi = mutual_information(sbm_blocks, w2v_clusters)        
+    # Retorna três valores: (1) matriz de sobreposição real entre clusters e blocos, (2) sobreposição esperada aleatória e 
+    # (3) NMI (Normalized Mutual Information) — valor entre 0 e 1 que resume a similaridade entre as partições.
+    po = partition_overlap(sbm_blocks, w2v_clusters)         
+
+
+    print("\n--- Comparação entre SBM e Word2Vec Clusters ---")
+    print(f"Variation of Information: {vi:.4f}")
+    print(f"Mutual Information: {mi:.4f}")
+    print("Partition Overlap:")
+    print(po)  # Isso é uma matriz (overlap + expected overlap + NMI)
+
+    return vi, mi, po
+
+def compute_cluster_purity(clusters, state_wew, g):
+    """
+    Calcula a pureza de cada cluster em relação aos blocos SBM.
+    Pureza = proporção dos termos do cluster que pertencem ao bloco SBM mais comum.
+    """
+    purities = {}
+    blocks = state_wew.get_blocks().a
+    summary = []
+
+    for cl, vertices in clusters.items():
+        blocos = [blocks[int(v)] for v in vertices]
+        count = Counter(blocos)
+        total = len(blocos)
+        bloco_dominante, freq = count.most_common(1)[0]
+        purity = freq / total if total > 0 else 0
+        purities[cl] = purity
+
+        summary.append({
+            "Cluster": cl,
+            "Bloco SBM Dominante": bloco_dominante,
+            "Termos no Cluster": total,
+            "No mesmo Bloco": freq,
+            "Pureza": purity
+        })
+
+    df_pureza = pd.DataFrame(summary).sort_values("Pureza", ascending=False)
+    print("\n--- Pureza dos Clusters ---")
+    print(df_pureza.to_string(index=False))
+    return df_pureza
+
+
+def plot_cluster_sbm_heatmap(clusters, state_wew, g):
+    """
+    Cria um heatmap da distribuição de termos por cluster em blocos SBM.
+    """
+    blocks = state_wew.get_blocks().a
+    matrix = {}
+
+    for cl, vertices in clusters.items():
+        for v in vertices:
+            bloco = int(blocks[int(v)])
+            if cl not in matrix:
+                matrix[cl] = {}
+            matrix[cl][bloco] = matrix[cl].get(bloco, 0) + 1
+
+    df_matrix = pd.DataFrame(matrix).fillna(0).astype(int).T  # Transposta: linhas = clusters, colunas = blocos SBM
+    plt.figure(figsize=(12, 6))
+    sns.heatmap(df_matrix, cmap="Blues", linewidths=0.5, annot=True, fmt="d")
+    plt.title("Distribuição de Termos: Clusters × Blocos SBM")
+    plt.xlabel("Bloco SBM")
+    plt.ylabel("Cluster Word2Vec")
+    plt.tight_layout()
+    plt.savefig("outputs/heatmap_cluster_sbm.png")
+    plt.show()
+
+
 
 def main():
     start_time = time.time()
@@ -896,6 +996,13 @@ def main():
     # Gerar o grafo COMUNIDADE DE DOCUMENTOS - CLUSTERS
     g_doc_clust = visualize_docs_and_clusters(g_intermediate, block_graph, state_wew)
     print(g_doc_clust)  # Grafo comunidade de documentos <-> cluster de termos
+
+    compare_partitions_sbm_word2vec(g, state_wew)
+
+    df_pureza = compute_cluster_purity(clusters, state_wew, g)
+    df_pureza.to_csv("outputs/pureza_clusters.csv", index=False)
+    plot_cluster_sbm_heatmap(clusters, state_wew, g)
+
 
     print(f"\nTempo total: {time.time() - start_time:.2f} segundos")
 
