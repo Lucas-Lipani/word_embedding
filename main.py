@@ -28,7 +28,7 @@ def initialize_graph():
     tipo_prop = g.new_vertex_property("int")
     short_term_prop = g.new_vertex_property("string")
     color_prop = g.new_vertex_property("vector<double>")
-    posicao_prop = g.new_vertex_property("float")
+    posicao_prop = g.new_vertex_property("vector<double>")
     amount_prop = g.vp["amount"] = g.new_vertex_property("int")
     size_prop = g.new_vertex_property("double")
     weight_prop = g.new_edge_property("int")
@@ -85,7 +85,8 @@ def build_bipartite_graph(g, df, nlp):
     """
     doc_vertex = {}
     term_vertex = {}
-    
+    doc_y = 0
+    term_y = 0
     for index, row in tqdm(df.iterrows(), desc="Processando Documentos", total=len(df)):
         doc_id = str(index)
         abstract = row["abstract"]
@@ -94,7 +95,8 @@ def build_bipartite_graph(g, df, nlp):
         g.vp["name"][v_doc] = doc_id
         g.vp["tipo"][v_doc] = 0
         g.vp["short_term"][v_doc] = ""
-        g.vp["posicao"][v_doc] = -2
+        g.vp["posicao"][v_doc] = [-10, doc_y]
+        doc_y += 1
         g.vp["size"][v_doc] = 20  # Tamanho menor para termos
         g.vp["amount"][v_doc] = 1
         g.vp["color"][v_doc] = [1.0, 0.0, 0.0, 1.0]  # Vermelho (RGBA)
@@ -117,7 +119,8 @@ def build_bipartite_graph(g, df, nlp):
                 g.vp["name"][v_term] = term
                 g.vp["color"][v_term] = [0.0, 0.0, 1.0, 1.0]  # Azul (RGBA)
                 g.vp["size"][v_term] = 10  # Tamanho menor para termos
-                g.vp["posicao"][v_term] = 2
+                g.vp["posicao"][v_term] = [10,term_y]
+                term_y += 1
                 g.vp["amount"][v_term] = freq
                 term_vertex[term_short] = v_term
             else:
@@ -134,74 +137,109 @@ def build_bipartite_graph(g, df, nlp):
     return g
 
 
+def assign_centered_vertical_positions(vertices, x_fixed, spacing=1.5):
+    """
+    Posiciona vértices verticalmente, centralizados em torno de y = 0, com x fixo.
+    """
+    n = len(vertices)
+    offset = -(n - 1) / 2 * spacing
+    return {v: [x_fixed, offset + i * spacing] for i, v in enumerate(vertices)}
+
+
+
 def create_intermediate_graph(g, clusters):
     """
     Cria um grafo intermediário que incorpora clusters de termos entre documentos e termos.
-    
-    :param g: Grafo bipartido original com relação DOCUMENTOS - TERMOS.
-    :param clusters: Dicionário onde as chaves são os rótulos dos clusters e os valores são listas de vértices de termos pertencentes a cada cluster.
-    :return: Novo grafo que estabelece a relação DOCUMENTOS - CLUSTERS - TERMOS, com vértices adicionais para os clusters.
+    A ligação direta documento-termo é removida se o termo for absorvido por um cluster.
     """
-    # Cria uma cópia do grafo original com todas as propriedades
-    g_intermediate = g.copy()
-    g_intermediate.vp["cluster_id"] = g_intermediate.new_vertex_property("int")
+    # Cria cópia do grafo original com todas as propriedades
+    g_inter = g.copy()
+    g_inter.vp["cluster_id"] = g_inter.new_vertex_property("int")
+    g_inter.vp["cluster"] = g_inter.new_vertex_property("int")
 
-    # Mapeia os nós de cluster criados: chave = rótulo do cluster, valor = vértice no grafo intermediário
-    cluster_nodes = {}
-    
-    # Adiciona os nós de cluster com base nos clusters gerados
+    # Inicializa todos os termos com cluster -1
+    for v in g_inter.vertices():
+        if int(g_inter.vp["tipo"][v]) == 1:
+            g_inter.vp["cluster"][v] = -1
+
+    # Mapeia apenas os termos que foram realmente agrupados
+    term_to_cluster = {}
     for cl, term_vertices in clusters.items():
-        # Define o rótulo do cluster com base nos 3 termos mais frequentes
-        terms = [(g.vp["name"][v], g.vp["amount"][v]) for v in term_vertices]
-        terms_sorted = sorted(terms, key=lambda x: x[1], reverse=True)[:3]
-        rep_label = " | ".join([t[0] for t in terms_sorted])
-        
-        # Adiciona o vértice de cluster ao grafo intermediário
-        v_cluster = g_intermediate.add_vertex()
-        g_intermediate.vp["tipo"][v_cluster]      = 2  # Tipo 2 indica cluster
-        g_intermediate.vp["name"][v_cluster] = rep_label
-        g_intermediate.vp["cluster_id"][v_cluster] = cl
-        g_intermediate.vp["posicao"][v_cluster]   = 0   # Posicionado no centro
-        g_intermediate.vp["size"][v_cluster]      = 30  # Tamanho maior para destaque
-        g_intermediate.vp["color"][v_cluster]     = [0.0, 1.0, 0.0, 1.0]  # Verde
-        cluster_nodes[cl] = v_cluster
+        for v in term_vertices:
+            term_to_cluster[g.vp["name"][v]] = cl
 
-    # Conecta cada nó de cluster aos nós de termos que o compõem.
+    # Atribui os clusters no grafo intermediário com base no nome
+    for v in g_inter.vertices():
+        if int(g_inter.vp["tipo"][v]) == 1:
+            name = g_inter.vp["name"][v]
+            g_inter.vp["cluster"][v] = term_to_cluster.get(name, -1)
+
+    # Cria vértices de cluster
+    cluster_nodes = {}
+    cluster_y = 0
+    for cl, term_vertices in clusters.items():
+        terms = [(g.vp["name"][v], g.vp["amount"][v]) for v in term_vertices]
+        rep_label = " | ".join([t[0] for t in sorted(terms, key=lambda x: x[1], reverse=True)[:3]])
+
+        v_cluster = g_inter.add_vertex()
+        g_inter.vp["tipo"][v_cluster] = 2
+        g_inter.vp["name"][v_cluster] = rep_label
+        g_inter.vp["cluster_id"][v_cluster] = cl
+        g_inter.vp["posicao"][v_cluster] = [0, cluster_y]
+        g_inter.vp["size"][v_cluster] = 30
+        g_inter.vp["color"][v_cluster] = [0.0, 1.0, 0.0, 1.0]
+        cluster_nodes[cl] = v_cluster
+        cluster_y += 1
+
+    # Conecta clusters aos termos
     for cl, term_vertices in clusters.items():
         cluster_v = cluster_nodes[cl]
         for term_v in term_vertices:
-            # Verifica se a aresta já existe para evitar duplicidade
-            if g_intermediate.edge(cluster_v, term_v) is None:
-                e = g_intermediate.add_edge(cluster_v, term_v)
-                # Define o peso da aresta, por exemplo, usando o valor de "amount" do termo
-                g_intermediate.ep["weight"][e] = g.vp["amount"][term_v]
+            if g_inter.edge(cluster_v, term_v) is None:
+                e = g_inter.add_edge(cluster_v, term_v)
+                g_inter.ep["weight"][e] = g.vp["amount"][term_v]
 
-    # Conecta documentos (tipo 0) aos clusters correspondentes.
-    # Para cada documento, verifica os termos conectados e agrega o peso de ligação com cada cluster.
-    for v_doc in g_intermediate.vertices():
-        if int(g_intermediate.vp["tipo"][v_doc]) != 0:
-            continue  # Considera somente documentos
-        cluster_weights = {}
-        for e in v_doc.all_edges():
-            # Determina o vértice vizinho
-            v_neigh = e.target() if e.source() == v_doc else e.source()
-            if int(g_intermediate.vp["tipo"][v_neigh]) == 1:
-                # Usa a propriedade 'cluster' do vértice de termo (já definida em cluster_terms no grafo original)
-                cl_label = int(g_intermediate.vp["cluster"][v_neigh])
-                cluster_weights[cl_label] = cluster_weights.get(cl_label, 0) + g_intermediate.ep["weight"][e]
-        # Para cada cluster associado ao documento, cria a aresta (se não existir) ou acumula o peso
-        for cl_label, weight in cluster_weights.items():
-            if cl_label in cluster_nodes:
-                cluster_v = cluster_nodes[cl_label]
-                if g_intermediate.edge(v_doc, cluster_v) is None:
-                    new_e = g_intermediate.add_edge(v_doc, cluster_v)
-                    g_intermediate.ep["weight"][new_e] = weight
-                else:
-                    e = g_intermediate.edge(v_doc, cluster_v)
-                    g_intermediate.ep["weight"][e] += weight
+    # Conecta documentos aos clusters, removendo a ligação com termos absorvidos
+    for v_doc in g_inter.vertices():
+        if int(g_inter.vp["tipo"][v_doc]) != 0:
+            continue
 
-    return g_intermediate
+        for e in list(v_doc.all_edges()):
+            v_term = e.target() if e.source() == v_doc else e.source()
+            if int(g_inter.vp["tipo"][v_term]) != 1:
+                continue
 
+            cl = int(g_inter.vp["cluster"][v_term])
+            if cl == -1:
+                continue  # Termo sem cluster: mantém a ligação
+
+            cluster_v = cluster_nodes[cl]
+            existing = g_inter.edge(v_doc, cluster_v)
+            if existing is None:
+                new_e = g_inter.add_edge(v_doc, cluster_v)
+                g_inter.ep["weight"][new_e] = g_inter.ep["weight"][e]
+            else:
+                g_inter.ep["weight"][existing] += g_inter.ep["weight"][e]
+
+            g_inter.remove_edge(e)  # Remove ligação direta doc-termo
+
+    # # Layout
+    # x_doc, x_cluster, x_term = -30, 0, 30
+    # spacing_y_docs, spacing_y_clusters, spacing_y_terms = 10.0, 2.5, 3.0
+
+    # docs = [v for v in g_inter.vertices() if int(g_inter.vp["tipo"][v]) == 0]
+    # clusters_ = [v for v in g_inter.vertices() if int(g_inter.vp["tipo"][v]) == 2]
+    # terms = [v for v in g_inter.vertices() if int(g_inter.vp["tipo"][v]) == 1]
+
+    # positions = {}
+    # positions.update(assign_centered_vertical_positions(docs, x_doc, spacing_y_docs))
+    # positions.update(assign_centered_vertical_positions(clusters_, x_cluster, spacing_y_clusters))
+    # positions.update(assign_centered_vertical_positions(terms, x_term, spacing_y_terms))
+
+    # for v, pos in positions.items():
+    #     g_inter.vp["posicao"][v] = pos
+
+    return g_inter
 
 def min_sbm_wew(g):
     """
@@ -548,7 +586,7 @@ def visualize_docs_and_clusters(g, block_graph, state):
     newG.vp["block_id"] = blockid_prop
     newG.vp["color"] = color_prop
     newG.vp["size"] = size_prop
-    newG.vp["pos"] = pos_prop
+    newG.vp["posicao"] = pos_prop
     newG.ep["weight"] = edge_weight
 
     # --- 1. Adiciona blocos de documentos ---
@@ -606,16 +644,16 @@ def visualize_docs_and_clusters(g, block_graph, state):
     cluster_counter = 0
     for v in newG.vertices():
         if newG.vp["tipo"][v] == 0:  # Documentos
-            newG.vp["pos"][v] = [-2, doc_counter]
+            newG.vp["posicao"][v] = [-2, doc_counter]
             doc_counter += 1
         else:  # Clusters
-            newG.vp["pos"][v] = [2, cluster_counter]
+            newG.vp["posicao"][v] = [2, cluster_counter]
             cluster_counter += 1
 
     # # --- 5. Visualização ---
     graph_draw(
         newG,
-        pos=newG.vp["pos"],
+        pos=newG.vp["posicao"],
         vertex_fill_color=newG.vp["color"],
         vertex_size=prop_to_size(newG.vp["size"], mi=20, ma=100),
         vertex_text=newG.vp["name"],
@@ -947,6 +985,7 @@ def main():
     graph_draw(
     g,
     pos=sfdp_layout(g),           # Layout para posicionar os nós
+    # pos = g.vp["posicao"],
     vertex_text=g.vp["name"],     # Usa o rótulo armazenado na propriedade "name"
     vertex_text_position = -2,
     vertex_text_color = 'black',
@@ -985,6 +1024,8 @@ def main():
     # Salva o grafo intermediário DOCUMENTO - CLUSTER - TERMOS
     graph_draw(
         g_intermediate,
+        # pos = g_intermediate.vp["posicao"],
+        pos = sfdp_layout(g_intermediate),
         vertex_text=g_intermediate.vp["name"],
         vertex_text_position = -2,
         vertex_text_color = 'black',
@@ -993,6 +1034,7 @@ def main():
         output="outputs/grafo_intermediario.pdf"
     )
 
+    
     # Gerar o grafo COMUNIDADE DE DOCUMENTOS - CLUSTERS
     g_doc_clust = visualize_docs_and_clusters(g_intermediate, block_graph, state_wew)
     print(g_doc_clust)  # Grafo comunidade de documentos <-> cluster de termos
