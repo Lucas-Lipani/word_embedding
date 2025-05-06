@@ -1,18 +1,19 @@
 import time
 import spacy
+from gensim.models import Word2Vec
+from copy import deepcopy
+import numpy as np
 import pandas as pd
+from collections import Counter
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')  # Usa backend para salvar arquivos, sem abrir janelas
 import seaborn as sns
-import matplotlib.pyplot as plt
-import numpy as np
+from heapq import nlargest
 from graph_tool.all import (Graph, prop_to_size, graph_draw, sfdp_layout, GraphView, minimize_blockmodel_dl, variation_information, mutual_information, partition_overlap)
 from tqdm import tqdm
 from sklearn.cluster import KMeans
-from gensim.models import Word2Vec
 from sklearn.metrics.pairwise import cosine_similarity
-from collections import Counter
 
 
 
@@ -44,6 +45,114 @@ def initialize_graph():
     
     return g
 
+def run_word2vec_param_search(df, nlp, g_base, state_sbm, param_list, n_clusters):
+
+    results = []
+
+    for params in param_list:
+        print(f"Testing Word2Vec params: {params}")
+
+        # Preprocess abstracts into token lists
+        sentences = []
+        for abstract in df["abstract"]:
+            doc = nlp(abstract)
+            tokens = [
+                token.text.lower().strip()
+                for token in doc
+                if not token.is_stop and not token.is_punct
+            ]
+            sentences.append(tokens)
+
+        # Train Word2Vec model with current params
+        model = Word2Vec(
+            sentences=sentences,
+            vector_size=params["vector_size"],
+            window=params["window"],
+            min_count=params["min_count"],
+            sg=params["sg"],
+            workers=4
+        )
+
+        # Copy base graph
+        g = deepcopy(g_base)
+
+        # Cluster terms using current model
+        clusters = cluster_terms(g, model, n_clusters=n_clusters)
+        if not clusters:
+            print("Skipping configuration due to no clusters.")
+            continue
+
+        # Compute cohesion
+        cohesion_scores = semantic_cohesion(g, clusters, model)
+
+        # Compare partitions (SBM vs Word2Vec)
+        try:
+            vi, mi, po = compare_partitions_sbm_word2vec(g, state_sbm)
+            nmi = po if isinstance(po, float) else po[2] if len(po) > 2 else 0.0
+        except Exception as e:
+            print(f"Error comparing partitions: {e}")
+            continue
+
+        # Compute cluster purity
+        df_pureza = compute_cluster_purity(clusters, state_sbm, g)
+        mean_purity = df_pureza["Pureza"].mean() if not df_pureza.empty else 0.0
+
+        results.append({
+            "params": params,
+            "VI": vi,
+            "MI": mi,
+            "NMI": nmi,
+            "mean_purity": mean_purity
+        })
+
+    df_results = pd.DataFrame(results)
+    df_results["vector_size"] = df_results["params"].apply(lambda x: x["vector_size"])
+    df_results["window"] = df_results["params"].apply(lambda x: x["window"])
+    df_results["min_count"] = df_results["params"].apply(lambda x: x["min_count"])
+    df_results["sg"] = df_results["params"].apply(lambda x: x["sg"])
+
+    df_results.to_csv("outputs/resultados_parametros_word2vec.csv", index=False)
+    print("\nResumo dos melhores parâmetros:\n", df_results.sort_values("NMI", ascending=False).head())
+
+    # Escolher melhor configuração (maior NMI)
+    best_row = df_results.sort_values("NMI", ascending=False).iloc[0]
+
+    best_params = {
+        "vector_size": int(best_row["vector_size"]),
+        "window": int(best_row["window"]),
+        "min_count": int(best_row["min_count"]),
+        "sg": int(best_row["sg"])
+    }
+
+    print("Melhores hiperparâmetros selecionados:", best_params)
+
+    # ── Re‑treinar o Word2Vec com os melhores hiperparâmetros ──
+    sentences = []
+    for abstract in df["abstract"]:
+        doc = nlp(abstract)
+        tokens = [
+            token.text.lower().strip()
+            for token in doc
+            if not token.is_stop and not token.is_punct
+        ]
+        sentences.append(tokens)
+
+    best_model = Word2Vec(
+        sentences=sentences,
+        vector_size=best_params["vector_size"],
+        window=best_params["window"],
+        min_count=best_params["min_count"],
+        sg=best_params["sg"],
+        workers=4
+    )
+
+    # (opcional) salvar CSV já sem a coluna params
+    df_results.drop(columns=["params"], inplace=True)
+    df_results.to_csv("outputs/resultados_parametros_word2vec.csv", index=False)
+
+    return best_model, best_params
+
+
 
 def train_word2vec(df, nlp):
     """
@@ -68,6 +177,7 @@ def train_word2vec(df, nlp):
         vector_size=100,  # Tamanho do vetor de representação para cada palavra (100 dimensões)
         window=5,       # Número de palavras antes e depois da palavra-alvo consideradas no contexto (janela de contexto)
         min_count=2,    # Ignora palavras que aparecem menos de 2 vezes no corpus
+        sg=0,           # 1 para skip-gram ou 0 (default) para CBOW. CBOW: contexto ➜ palavra | Skip‑gram: palavra ➜ contexto
         workers=4       # Número de threads utilizadas para acelerar o treinamento
     )
 
@@ -741,28 +851,26 @@ def calculate_centroid(cluster, w2v_model, g):
 
 def find_central_term(cluster, centroid, w2v_model, g):
     """
-    Identifica o termo mais central do cluster, isto é, aquele cujo vetor Word2Vec possui maior similaridade com o centróide.
-    
-    :param cluster: Lista de vértices pertencentes ao cluster.
-    :param centroid: Vetor do centróide do cluster.
-    :param w2v_model: Modelo Word2Vec treinado para acesso aos vetores dos termos.
-    :param g: Grafo contendo os termos.
-    :return: Uma tupla (termo_central, similaridade) onde termo_central é a palavra mais próxima do centróide e similaridade é sua similaridade, ou (None, 0) se não encontrado.
+    Retorna os 3 termos mais centrais de um cluster baseado na similaridade com o centróide.
     """
-    best_term = None
-    best_sim = -1
+    similarities = []
     centroid = centroid.reshape(1, -1)
+
     for v in cluster:
         term = g.vp["name"][v]
         try:
             vec = w2v_model.wv[term].reshape(1, -1)
             sim = cosine_similarity(vec, centroid)[0][0]
-            if sim > best_sim:
-                best_sim = sim
-                best_term = term
+            similarities.append((term, sim))
         except KeyError:
             continue
-    return best_term, best_sim
+
+    # Ordena todos os termos por similaridade e pega os 3 primeiros
+    sorted_terms = sorted(similarities, key=lambda x: x[1], reverse=True)[:3]
+    terms = [t[0] for t in sorted_terms]
+    sims = [t[1] for t in sorted_terms]
+
+    return terms, sims
 
 
 def find_sbm_block(term, g, state_wew):
@@ -794,42 +902,44 @@ def compare_clusters_sbm(clusters, cohesion_scores, g, w2v_model, state_wew):
     """
     summary = []
     for cl, vertices in clusters.items():
-        # Rótulo representativo
+        # Rótulo representativo (3 mais frequentes)
         termos = [(g.vp["name"][v], g.vp["amount"][v]) for v in vertices]
         termos_ordenados = sorted(termos, key=lambda x: x[1], reverse=True)
         rep_label = " | ".join([t[0] for t in termos_ordenados[:3]])
-        
-        # Número de termos e soma das frequências
+
+        # Frequência e coesão
         num_termos = len(vertices)
         freq_total = sum(g.vp["amount"][v] for v in vertices)
-        
-        # Coesão semântica já calculada
         coesao = cohesion_scores.get(cl, 0)
-        
-        # Cálculo do centróide do cluster
+
+        # Cálculo do centróide e termos centrais
         centroid = calculate_centroid(vertices, w2v_model, g)
         if centroid is not None:
-            central_term, central_sim = find_central_term(vertices, centroid, w2v_model, g)
+            central_terms, central_sims = find_central_term(vertices, centroid, w2v_model, g)
         else:
-            central_term, central_sim = None, 0
-        
-        # Mapeamento do termo central para bloco SBM
-        if central_term is not None:
-            sbm_block = find_sbm_block(central_term, g, state_wew)
+            central_terms, central_sims = [], []
+
+        # Juntar termos centrais e similaridades para exibir como string
+        termos_centrais_fmt = " | ".join(central_terms) if central_terms else "None"
+        sim_central_fmt = " | ".join(f"{sim:.3f}" for sim in central_sims) if central_sims else "0"
+
+        # Buscar bloco SBM do termo mais central
+        if central_terms:
+            sbm_block = find_sbm_block(central_terms[0], g, state_wew)
         else:
             sbm_block = None
-        
+
         summary.append({
             "Cluster ID": cl,
             "Label": rep_label,
             "Num_Termos": num_termos,
             "Freq_Total": freq_total,
             "Coesao": coesao,
-            "Termo Central": central_term,
-            "Simil Central": central_sim,
+            "Termos Centrais": termos_centrais_fmt,
+            "Similaridades": sim_central_fmt,
             "SBM Block": sbm_block
         })
-    
+
     df_summary = pd.DataFrame(summary)
     print(df_summary)
     return df_summary
@@ -843,7 +953,7 @@ def plot_central_similarity(df_summary):
     :return: (Não há retorno; a função exibe e salva o gráfico gerado.)
     """
     plt.figure(figsize=(10, 6))
-    plt.bar(df_summary["Label"], df_summary["Simil Central"], color="coral")
+    plt.bar(df_summary["Label"], df_summary["Similaridades"], color="coral")
     plt.xticks(rotation=45, ha="right")
     plt.xlabel("Rótulo do Cluster (3 termos mais frequentes)")
     plt.ylabel("Similaridade do Termo Central com o Centróide")
@@ -949,14 +1059,43 @@ def plot_cluster_sbm_heatmap(clusters, state_wew, g):
 
 
 def main():
+    import time
+    import spacy
+    from itertools import product
+
     start_time = time.time()
-    
+
     nlp = spacy.load("en_core_web_sm")
     df = pd.read_parquet("wos_sts_journals.parquet")
     df = df.sample(n=300, random_state=42)
-    
-    # Treinar Word2Vec
-    w2v_model = train_word2vec(df, nlp)
+
+    # Construir grafo base
+    g_base = initialize_graph()
+    g_base = build_bipartite_graph(g_base, df, nlp)
+
+    # Aplicar SBM
+    state_wew = min_sbm_wew(g_base)
+    num_blocos_termo = count_term_blocks(g_base, state_wew)
+
+    # Definir grid de hiperparâmetros
+    param_grid = {
+        "vector_size": [50, 100],
+        "window": [3, 5, 10],
+        "min_count": [1, 2],
+        "sg": [0, 1]
+    }
+    param_list = [
+        {"vector_size": vs, "window": w, "min_count": mc, "sg": sg}
+        for vs, w, mc, sg in product(
+            param_grid["vector_size"],
+            param_grid["window"],
+            param_grid["min_count"],
+            param_grid["sg"]
+        )
+    ]
+
+    # Rodar busca de hiperparâmetros e treinar modelo com os melhores
+    w2v_model, best_params = run_word2vec_param_search(df, nlp, g_base, state_wew, param_list, num_blocos_termo)
 
     '''
     # Pegar as 5 primeiras palavras do vocabulário
