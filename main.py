@@ -153,6 +153,17 @@ def run_word2vec_param_search(df, nlp, g_base, state_sbm, param_list, n_clusters
     return best_model, best_params
 
 
+def teste_hiperparametros(df, nlp, param_list, param_grid):
+    g_base = initialize_graph()
+    g_base = build_bipartite_graph(g_base, df, nlp)
+
+    # Aplicar SBM
+    state_wew = min_sbm_wew(g_base)
+    num_blocos_termo = count_term_blocks(g_base, state_wew)
+
+    w2v_model, best_params = run_word2vec_param_search(df, nlp, g_base, state_wew, param_list, num_blocos_termo)
+
+    return w2v_model, best_params
 
 def train_word2vec(df, nlp):
     """
@@ -175,7 +186,7 @@ def train_word2vec(df, nlp):
     model = Word2Vec(
         sentences,      # Lista de abstracts tokenizados usados para treinar o modelo
         vector_size=100,  # Tamanho do vetor de representação para cada palavra (100 dimensões)
-        window=5,       # Número de palavras antes e depois da palavra-alvo consideradas no contexto (janela de contexto)
+        window=10,       # Número de palavras antes e depois da palavra-alvo consideradas no contexto (janela de contexto)
         min_count=2,    # Ignora palavras que aparecem menos de 2 vezes no corpus
         sg=0,           # 1 para skip-gram ou 0 (default) para CBOW. CBOW: contexto ➜ palavra | Skip‑gram: palavra ➜ contexto
         workers=4       # Número de threads utilizadas para acelerar o treinamento
@@ -1069,14 +1080,6 @@ def main():
     df = pd.read_parquet("wos_sts_journals.parquet")
     df = df.sample(n=300, random_state=42)
 
-    # Construir grafo base
-    g_base = initialize_graph()
-    g_base = build_bipartite_graph(g_base, df, nlp)
-
-    # Aplicar SBM
-    state_wew = min_sbm_wew(g_base)
-    num_blocos_termo = count_term_blocks(g_base, state_wew)
-
     # Definir grid de hiperparâmetros
     param_grid = {
         "vector_size": [50, 100],
@@ -1094,8 +1097,15 @@ def main():
         )
     ]
 
-    # Rodar busca de hiperparâmetros e treinar modelo com os melhores
-    w2v_model, best_params = run_word2vec_param_search(df, nlp, g_base, state_wew, param_list, num_blocos_termo)
+    # Podemos escolher duas aproximações:
+    # Testar os hiperparametros e definir qual o melhor e inciar o código, essa opção leva mais tempo
+    # Utilisar hiperparametros já pré-definidos e fazer o word2vec, dessa forma é mais rápido, porém demanda o conhecimento prévio de quais hiperparametros utilizar
+    escolha = input("Deseja realizar o teste de hiperparâmetros? (s/n): ").strip().lower()
+
+    if escolha == 's':
+        w2v_model, best_params = teste_hiperparametros(df, nlp, param_list, param_grid)
+    else:
+        w2v_model = train_word2vec(df, nlp)
 
     '''
     # Pegar as 5 primeiras palavras do vocabulário
