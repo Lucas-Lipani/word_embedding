@@ -191,7 +191,9 @@ def train_word2vec(df, nlp):
         sg=0,           # 1 para skip-gram ou 0 (default) para CBOW. CBOW: contexto ➜ palavra | Skip‑gram: palavra ➜ contexto
         workers=4       # Número de threads utilizadas para acelerar o treinamento
     )
-
+    print(type(model))
+    print(model)
+    exit()
     return model
 
 
