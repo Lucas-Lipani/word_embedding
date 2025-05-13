@@ -1,27 +1,22 @@
 import time
-from itertools import product
 import spacy
 from gensim.models import Word2Vec
-from copy import deepcopy
-import os
 import numpy as np
 import pandas as pd
 from collections import Counter
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')  # Usa backend para salvar arquivos, sem abrir janelas
-import seaborn as sns
-from heapq import nlargest
-from graph_tool.all import (Graph, prop_to_size, graph_draw, sfdp_layout, GraphView, minimize_blockmodel_dl, variation_information, mutual_information, partition_overlap)
+from graph_tool.all import (Graph, prop_to_size, graph_draw, sfdp_layout, minimize_blockmodel_dl, variation_information, mutual_information, partition_overlap)
 from tqdm import tqdm
 from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
 
 def initialize_graph():
     """
-    Inicializa e configura um grafo não direcionado com as propriedades básicas para o projeto Sashimi.
+    Inicializa e configura um grafo não direcionado com as propriedades básicas baseado no projeto Sashimi.
     
-    :return: Um objeto Graph com propriedades de vértice (name, tipo, short_term, color, posicao, amount, size) e de aresta (weight) definidas.
+    :return: Um objeto Graph com propriedades de vértice e de aresta definidas.
     """
     g = Graph(directed=False)
 
@@ -82,6 +77,7 @@ def build_window_graph(g, df, nlp, w):
         else:
             w_local = w                      # usa valor inteiro fornecido
 
+
         # loop sobre posições (centro da janela)
         for i in range(len(tokens)):
             start = max(0, i - w_local)
@@ -135,7 +131,7 @@ def build_window_graph(g, df, nlp, w):
                 e_dj = g.add_edge(v_doc, v_win)
                 g.ep["weight"][e_dj] = total_freq
 
-    return g, w_local
+    return g
 
 
 def min_sbm_docs_janelas(g_doc_jan):
@@ -889,81 +885,6 @@ def compare_partitions_sbm_word2vec(g_clusters, state_sbm, g_doc_jan):
 
     return vi, mi, po
 
-
-def run_pipeline(df, nlp, win):
-    """
-    Executa o fluxo completo para um dado tamanho de janela (win):
-    grafo DOC-JAN-TERMO  →  SBM em DOC-JAN  →  Word2Vec+clusters em DOC-TERMO
-    Retorna um dicionário com métricas resumidas.
-    """
-    # 1) grafo tripartido
-    g = initialize_graph()
-    g, win = build_window_graph(g, df, nlp, win)
-    print("Grafo DOC-JAN-TERM")
-    print(g)
-
-    # 2) sub-grafos bipartidos
-    g_doc_jan  = extract_doc_jan_graph(g)
-    print("Grafo DOC-JAN")
-    print(g_doc_jan)
-
-    g_doc_term = extract_doc_term_graph(g)
-    print("Grafo DOC-TERM")
-    print(g_doc_term)
-
-    # #Construção dos grafos gerados
-    # draw_base_graphs(g,g_doc_jan,g_doc_term, win)
-
-    # 3) SBM em DOC-JAN
-    state = min_sbm_docs_janelas(g_doc_jan)
-    n_blocks_jan = count_jan_blocks(g_doc_jan, state)
-        
-
-    # 4) Word2Vec (usa janela int; se 'full', põe 10 só para não quebrar)
-    w_int = win if isinstance(win, int) else 10
-    w2v_model = train_word2vec(df, nlp, w_int)
-    window_label = "FULL" if w_int == "FULL" else w_int
-
-    # # #Construção do grafo de blocos
-    # block_graph = state.get_bg()
-    # build_block_graph(block_graph, state, g_doc_jan, win) #TODO preciso adaptar essa função para a milha lógica
-
-    # 5) clusters em DOC-TERMO
-    clusters = cluster_terms(g_doc_term, w2v_model, n_clusters=n_blocks_jan)
-    cohesion_scores = semantic_cohesion(g_doc_term, clusters, w2v_model)
-    mean_cohesion = np.mean(list(cohesion_scores.values())) if cohesion_scores else 0.0
-
-    # 5.1) Comparação entre o número de blocos de termos identificados pelo SBM e os clusters formados via Word2Vec.
-    cluster_analyse(clusters, cohesion_scores, g_doc_term, win)
-
-    # # Adicionando os clusters gerados ao grafo original, criando uma entidade intermediária com a relação DOCUMENTO - CLUSTER - TERMOS
-    # g_intermediate = create_intermediate_graph(g_doc_term, clusters)
-
-    df_comparison = compare_clusters_sbm(clusters, cohesion_scores, g_doc_jan, w2v_model, state)
-    df_comparison.to_csv("outputs/window/cluster_sbm_w"+ str(win) +"_comparison.csv", index=False)
-
-
-    # 6) métricas SBM × Word2Vec
-    vi, mi, po = compare_partitions_sbm_word2vec(
-        g_doc_term,  # grafo DOC-TERM com clusters
-        state,       # resultado do SBM em g_doc_jan
-        g_doc_jan    # grafo DOC-JAN onde o SBM foi aplicado
-    )
-
-    nmi = po[2] if isinstance(po, (list, tuple, np.ndarray)) else po
-
-    
-
-    return {
-        "window": window_label,
-        "blocks": n_blocks_jan,
-        "clusters": len(clusters),
-        "VI": vi,
-        "NMI": nmi,
-        "mean_cohesion": mean_cohesion
-    }
-
-
 def plot_cohesion_relative_to_window(csv_path="outputs/window/results_window.csv",
                                      save_path="outputs/window/cohesion_relative.png",
                                      show=True):
@@ -972,7 +893,7 @@ def plot_cohesion_relative_to_window(csv_path="outputs/window/results_window.csv
 
     # Trata a janela FULL como último item
     def sort_key(w):
-        return int(w) if w != "FULL" else 9999
+        return int(w) if w != "FULL" else 70
 
     df["sort_key"] = df["window"].apply(sort_key)
     df = df.sort_values("sort_key")
@@ -1024,13 +945,85 @@ def plot_cohesion_relative_to_window(csv_path="outputs/window/results_window.csv
 
 
 
+def run_pipeline(df, nlp, win):
+    """
+    Executa o fluxo completo para um dado tamanho de janela (win):
+    grafo DOC-JAN-TERMO  →  SBM em DOC-JAN  →  Word2Vec+clusters em DOC-TERMO
+    Retorna um dicionário com métricas resumidas.
+    """
+    # 1) grafo tripartido
+    g = initialize_graph()
+    g= build_window_graph(g, df, nlp, win)
+    print("Grafo DOC-JAN-TERM")
+    print(g)
+
+    # 2) sub-grafos bipartidos
+    g_doc_jan  = extract_doc_jan_graph(g)
+    print("Grafo DOC-JAN")
+    print(g_doc_jan)
+
+    g_doc_term = extract_doc_term_graph(g)
+    print("Grafo DOC-TERM")
+    print(g_doc_term)
+
+    # # Impressão dos 3 grafos bases do projeto
+    # draw_base_graphs(g,g_doc_jan,g_doc_term, win)
+
+    # 3) SBM em DOC-JAN
+    state = min_sbm_docs_janelas(g_doc_jan)
+    n_blocks_jan = count_jan_blocks(g_doc_jan, state)
+        
+
+    # 4) Word2Vec (usa janela int; se 'full', põe 10000, pois o gensim trata isso automaticamente e limita ao valor máximo de termos do abstract
+    w_int = win if isinstance(win, int) else 10000
+    w2v_model = train_word2vec(df, nlp, w_int)
+    window_label = "FULL" if win == "full" else w_int
+
+    # # #Construção do grafo de blocos
+    # block_graph = state.get_bg()
+    # build_block_graph(block_graph, state, g_doc_jan, win) #TODO preciso adaptar essa função para a milha lógica
+
+    # 5) clusters em DOC-TERMO
+    clusters = cluster_terms(g_doc_term, w2v_model, n_clusters=n_blocks_jan)
+    cohesion_scores = semantic_cohesion(g_doc_term, clusters, w2v_model)
+    mean_cohesion = np.mean(list(cohesion_scores.values())) if cohesion_scores else 0.0
+
+    # 5.1) Comparação entre o número de blocos de termos identificados pelo SBM e os clusters formados via Word2Vec.
+    cluster_analyse(clusters, cohesion_scores, g_doc_term, win)
+
+    # # Adicionando os clusters gerados ao grafo original, criando uma entidade intermediária com a relação DOCUMENTO - CLUSTER - TERMOS
+    # g_intermediate = create_intermediate_graph(g_doc_term, clusters)
+
+    df_comparison = compare_clusters_sbm(clusters, cohesion_scores, g_doc_jan, w2v_model, state)
+    df_comparison.to_csv("outputs/window/cluster_sbm_w"+ str(window_label) +"_comparison.csv", index=False)
+
+
+    # 6) métricas SBM × Word2Vec
+    vi, mi, po = compare_partitions_sbm_word2vec(
+        g_doc_term,  # grafo DOC-TERM com clusters
+        state,       # resultado do SBM em g_doc_jan
+        g_doc_jan    # grafo DOC-JAN onde o SBM foi aplicado
+    )
+
+    nmi = po[2] if isinstance(po, (list, tuple, np.ndarray)) else po
+
+    return {
+        "window": window_label,
+        "blocks": n_blocks_jan,
+        "clusters": len(clusters),
+        "VI": vi,
+        "NMI": nmi,
+        "mean_cohesion": mean_cohesion
+    }
+
+
 def main():
     start_time = time.time()
 
     nlp = spacy.load("en_core_web_sm")
     df  = pd.read_parquet("wos_sts_journals.parquet").sample(n=300, random_state=42)
 
-    WINDOW_LIST = [5, 10, 20, 50, 100, 200, "full"]   # último = abstract inteiro
+    WINDOW_LIST = [5, 10, 20, 40, 50, "full"]   # último = abstract inteiro
     results = []
 
     for win in WINDOW_LIST:
@@ -1043,10 +1036,10 @@ def main():
     # salva resumo
     df_results = pd.DataFrame(results)
     df_results.to_csv("outputs/window/results_window.csv", index=False) 
-
-    plot_cohesion_relative_to_window()
-
     print("\nResumo final:\n", df_results)
+
+    #Impressão do gráfico que avalia a relação entre SBM x Word2Vec+Kmeans    
+    plot_cohesion_relative_to_window()
 
     print(f"\nTempo total: {time.time() - start_time:.2f} s")
 
