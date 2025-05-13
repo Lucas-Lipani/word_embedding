@@ -1,4 +1,5 @@
 import time
+from itertools import product
 import spacy
 from gensim.models import Word2Vec
 from copy import deepcopy
@@ -10,7 +11,7 @@ import matplotlib
 matplotlib.use('Agg')  # Usa backend para salvar arquivos, sem abrir janelas
 import seaborn as sns
 from heapq import nlargest
-from graph_tool.all import (Graph, prop_to_size, graph_draw, sfdp_layout, GraphView, minimize_blockmodel_dl, variation_information, mutual_information, partition_overlap)
+from graph_tool.all import (Graph, prop_to_size, graph_draw, sfdp_layout, minimize_blockmodel_dl, variation_information, mutual_information, partition_overlap)
 from tqdm import tqdm
 from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
@@ -111,7 +112,7 @@ def run_word2vec_param_search(df, nlp, g_base, state_sbm, param_list, n_clusters
     df_results["min_count"] = df_results["params"].apply(lambda x: x["min_count"])
     df_results["sg"] = df_results["params"].apply(lambda x: x["sg"])
 
-    df_results.to_csv("outputs/resultados_parametros_word2vec.csv", index=False)
+    df_results.to_csv("outputs/main/resultados_parametros_word2vec.csv", index=False)
     print("\nResumo dos melhores parâmetros:\n", df_results.sort_values("NMI", ascending=False).head())
 
     # Escolher melhor configuração (maior NMI)
@@ -148,9 +149,9 @@ def run_word2vec_param_search(df, nlp, g_base, state_sbm, param_list, n_clusters
 
     # (opcional) salvar CSV já sem a coluna params
     df_results.drop(columns=["params"], inplace=True)
-    df_results.to_csv("outputs/resultados_parametros_word2vec.csv", index=False)
+    df_results.to_csv("outputs/main/resultados_parametros_word2vec.csv", index=False)
 
-    return best_model, best_params
+    return best_model, best_params["window"]
 
 
 def teste_hiperparametros(df, nlp, param_list, param_grid):
@@ -161,9 +162,9 @@ def teste_hiperparametros(df, nlp, param_list, param_grid):
     state_wew = min_sbm_wew(g_base)
     num_blocos_termo = count_term_blocks(g_base, state_wew)
 
-    w2v_model, best_params = run_word2vec_param_search(df, nlp, g_base, state_wew, param_list, num_blocos_termo)
+    w2v_model, window = run_word2vec_param_search(df, nlp, g_base, state_wew, param_list, num_blocos_termo)
 
-    return w2v_model, best_params
+    return w2v_model, window
 
 def train_word2vec(df, nlp):
     """
@@ -191,10 +192,8 @@ def train_word2vec(df, nlp):
         sg=0,           # 1 para skip-gram ou 0 (default) para CBOW. CBOW: contexto ➜ palavra | Skip‑gram: palavra ➜ contexto
         workers=4       # Número de threads utilizadas para acelerar o treinamento
     )
-    print(type(model))
-    print(model)
-    exit()
-    return model
+ 
+    return model, model.window
 
 
 def build_bipartite_graph(g, df, nlp):
@@ -337,17 +336,7 @@ def create_intermediate_graph(g, clusters):
                 continue  # Termo sem cluster: mantém a ligação
 
             cluster_v = cluster_nodes[cl]
-            existing = g_inter.edge(v_doc, cluster_v)
-            if existing is None:
-                new_e = g_inter.add_edge(v_doc, cluster_v)
-                g_inter.ep["weight"][new_e] = g_inter.ep["weight"][e]
-            else:
-                g_inter.ep["weight"][existing] += g_inter.ep["weight"][e]
 
-            g_inter.remove_edge(e)  # Remove ligação direta doc-termo
-
-    # # Layout
-    # x_doc, x_cluster, x_term = -30, 0, 30
     # spacing_y_docs, spacing_y_clusters, spacing_y_terms = 10.0, 2.5, 3.0
 
     # docs = [v for v in g_inter.vertices() if int(g_inter.vp["tipo"][v]) == 0]
@@ -384,7 +373,7 @@ def min_sbm_wew(g):
         vertex_text_color = 'black',
         vertex_font_size=10,  # Tamanho da fonte dos rótulos
         output_size=(800, 800),         # Tamanho da saída
-        output="outputs/text_graph_sbm.pdf"    # Arquivo PDF de saída
+        output="outputs/main/text_graph_sbm.pdf"    # Arquivo PDF de saída
     )
 
     return state
@@ -501,7 +490,7 @@ def build_block_graph(block_graph, state, g):
     graph_draw(
         block_graph,
         pos=sfdp_layout(block_graph),
-        output="outputs/text_block_graph_original.pdf"
+        output="outputs/main/text_block_graph_original.pdf"
     )
     
     # Definir propriedades block graph
@@ -593,7 +582,7 @@ def build_block_graph(block_graph, state, g):
     to_remove = [v for v in block_graph.vertices() if v.out_degree() == 0 and v.in_degree() == 0]
     for v in reversed(to_remove):  # Remover de trás para frente evita problemas de indexação
         block_graph.remove_vertex(v, fast=False)
-    # visualize_graph(block_graph, "outputs/text_block_graph.pdf")
+    # visualize_graph(block_graph, "outputs/main/text_block_graph.pdf")
 
     # Cria um layout manual
     t = d = 0
@@ -626,7 +615,7 @@ def build_block_graph(block_graph, state, g):
         vertex_text_color = 'black',
         vertex_font_size=10,  # Tamanho da fonte dos rótulos
         output_size=(800, 800),  # Tamanho da saída
-        output="outputs/text_block_graph_sbm.pdf"  # Arquivo PDF de saída
+        output="outputs/main/text_block_graph_sbm.pdf"  # Arquivo PDF de saída
     )
 
     # return block_to_vertices
@@ -785,7 +774,7 @@ def visualize_docs_and_clusters(g, block_graph, state):
         vertex_font_size=10,
         edge_pen_width=prop_to_size(newG.ep["weight"], mi=1, ma=35, power=0.5),
         output_size=(800, 800),
-        output="outputs/graph_docs_clusters.pdf"
+        output="outputs/main/graph_docs_clusters.pdf"
     )
 
     return newG
@@ -835,7 +824,7 @@ def cluster_analyse(clusters, cohesion_scores, g):
     plt.ylabel("Coesão Semântica Média")
     plt.title("Coesão Semântica por Cluster (Word2Vec)")
     plt.tight_layout()
-    plt.savefig("outputs/coesao_clusters.png")  # Salva o gráfico como PNG
+    plt.savefig("outputs/main/coesao_clusters.png")  # Salva o gráfico como PNG
     # plt.show()
 
 
@@ -954,7 +943,7 @@ def compare_clusters_sbm(clusters, cohesion_scores, g, w2v_model, state_wew):
         })
 
     df_summary = pd.DataFrame(summary)
-    print(df_summary)
+    
     return df_summary
 
 
@@ -972,7 +961,7 @@ def plot_central_similarity(df_summary):
     plt.ylabel("Similaridade do Termo Central com o Centróide")
     plt.title("Similaridade Central dos Clusters")
     plt.tight_layout()
-    plt.savefig("outputs/similarity_central.png")
+    plt.savefig("outputs/main/similarity_central.png")
     # plt.show()
 
 def compare_partitions_sbm_word2vec(g, state_wew):
@@ -1066,15 +1055,10 @@ def plot_cluster_sbm_heatmap(clusters, state_wew, g):
     plt.xlabel("Bloco SBM")
     plt.ylabel("Cluster Word2Vec")
     plt.tight_layout()
-    plt.savefig("outputs/heatmap_cluster_sbm.png")
+    plt.savefig("outputs/main/heatmap_cluster_sbm.png")
     plt.show()
 
-
-
 def main():
-    import time
-    import spacy
-    from itertools import product
 
     start_time = time.time()
 
@@ -1105,9 +1089,9 @@ def main():
     escolha = input("Deseja realizar o teste de hiperparâmetros? (s/n): ").strip().lower()
 
     if escolha == 's':
-        w2v_model, best_params = teste_hiperparametros(df, nlp, param_list, param_grid)
+        w2v_model, window = teste_hiperparametros(df, nlp, param_list, param_grid)
     else:
-        w2v_model = train_word2vec(df, nlp)
+        w2v_model, window = train_word2vec(df, nlp)
 
     '''
     # Pegar as 5 primeiras palavras do vocabulário
@@ -1142,7 +1126,7 @@ def main():
     vertex_text_color = 'black',
     vertex_font_size=10,  # Tamanho da fonte dos rótulos
     vertex_fill_color=g.vp["color"],  # Define a cor dos vértices
-    output="outputs/bipartite_graph.pdf"  # Salva a visualização em PDF
+    output="outputs/main/bipartite_graph.pdf"  # Salva a visualização em PDF
     )
 
     # Aplicação do sbm com a propriedade de peso nas arestas
@@ -1166,7 +1150,7 @@ def main():
     cluster_analyse(clusters, cohesion_scores, g)
 
     df_comparison = compare_clusters_sbm(clusters, cohesion_scores, g, w2v_model, state_wew)
-    df_comparison.to_csv("outputs/cluster_sbm_comparison.csv", index=False)
+    df_comparison.to_csv("outputs/main/cluster_sbm_comparison.csv", index=False)
     plot_central_similarity(df_comparison)
     
     # Adicionando os clusters gerados ao grafo original, criando uma entidade intermediária com a relação DOCUMENTO - CLUSTER - TERMOS
@@ -1182,7 +1166,7 @@ def main():
         vertex_text_color = 'black',
         vertex_font_size=10,  # Tamanho da fonte dos rótulos
         vertex_fill_color=g_intermediate.vp["color"],
-        output="outputs/grafo_intermediario.pdf"
+        output="outputs/main/grafo_intermediario.pdf"
     )
 
     
@@ -1193,7 +1177,7 @@ def main():
     compare_partitions_sbm_word2vec(g, state_wew)
 
     df_pureza = compute_cluster_purity(clusters, state_wew, g)
-    df_pureza.to_csv("outputs/pureza_clusters.csv", index=False)
+    df_pureza.to_csv("outputs/main/pureza_clusters.csv", index=False)
     plot_cluster_sbm_heatmap(clusters, state_wew, g)
 
 
