@@ -127,6 +127,8 @@ python3 window_experiments.py
 | 50     | 267        | 267          | 5.80     | 0.061     | 0.85            |
 | FULL   | 87         | 87           | 6.24     | 0.048     | 0.88            |
 
+![Cohesion Relative](./images/cohesion_relative.png)
+
 ### Observations
 
 * **20 tokens** achieves the best alignment (lowest VI, highest NMI).
