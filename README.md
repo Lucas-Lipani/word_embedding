@@ -52,7 +52,7 @@ SBM exploits **relational structure** derived from co-occurrence graphs built fr
 * **Short corpora or lacking link metadata** → **Word2Vec** captures synonymy and local context.
 * **Link-prediction tasks** → **SBM** yields probabilities for future edges.
 
----
+<!-- ---
 
 ## Main Scripts
 
@@ -70,7 +70,7 @@ SBM exploits **relational structure** derived from co-occurrence graphs built fr
 2. **SBM** on the Doc–Window subgraph for local semantic blocks
 3. **Word2Vec + K-Means** on the Doc–Term subgraph
 4. **Metrics per window**: blocks / clusters, VI, NMI, mean cohesion
-5. **Reports** saved in `outputs/window` (CSV, PDF, PNG)
+5. **Reports** saved in `outputs/window` (CSV, PDF, PNG) -->
 
 ---
 
