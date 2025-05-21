@@ -17,7 +17,7 @@ def initialize_graph():
     """
     Inicializa e configura um grafo não direcionado com as propriedades básicas baseado no projeto Sashimi.
     
-    :return: Um objeto Graph com propriedades de vértice e de aresta definidas.
+    :return: Um objeto Graph vazio com propriedades de vértice e de aresta definidas.
     """
     g = Graph(directed=False)
 
@@ -41,6 +41,48 @@ def initialize_graph():
     
     return g
 
+def draw_base_graphs(g, g_doc_jan, g_doc_term,window):
+
+    window = str(window)
+
+    # Salva o grafo original DOCUMENTO - JANELAS - TERMOS
+    graph_draw(
+    g,
+    #pos=sfdp_layout(g),           # Layout para posicionar os nós
+    pos = g.vp["posicao"],
+    vertex_text=g.vp["name"],     # Usa o rótulo armazenado na propriedade "name"
+    vertex_text_position = -2,
+    vertex_text_color = 'black',
+    vertex_font_size=10,  # Tamanho da fonte dos rótulos
+    vertex_fill_color=g.vp["color"],  # Define a cor dos vértices
+    output="outputs/window/window" + window + "_graph_d-j-t.pdf"  # Salva a visualização em PDF
+    )
+
+    # Salva o grafo original DOCUMENTO - JANELAS
+    graph_draw(
+    g_doc_jan,
+    #pos=sfdp_layout(g_doc_jan),           # Layout para posicionar os nós
+    pos = g_doc_jan.vp["posicao"],
+    vertex_text=g_doc_jan.vp["name"],     # Usa o rótulo armazenado na propriedade "name"
+    vertex_text_position = -2,
+    vertex_text_color = 'black',
+    vertex_font_size=10,  # Tamanho da fonte dos rótulos
+    vertex_fill_color=g_doc_jan.vp["color"],  # Define a cor dos vértices
+    output="outputs/window/window" + window + "_graph_d-j.pdf"  # Salva a visualização em PDF
+    )
+
+    # Salva o grafo original DOCUMENTO - TERMOS
+    graph_draw(
+    g_doc_term,
+    #pos=sfdp_layout(g_doc_term),           # Layout para posicionar os nós
+    pos = g_doc_term.vp["posicao"],
+    vertex_text=g_doc_term.vp["name"],     # Usa o rótulo armazenado na propriedade "name"
+    vertex_text_position = -2,
+    vertex_text_color = 'black',
+    vertex_font_size=10,  # Tamanho da fonte dos rótulos
+    vertex_fill_color=g_doc_term.vp["color"],  # Define a cor dos vértices
+    output="outputs/window/window" + window + "_graph_d-t.pdf"  # Salva a visualização em PDF
+    )
 
 def build_window_graph(g, df, nlp, w):
     """
@@ -302,16 +344,20 @@ def train_word2vec(df, nlp, window):
         sentences,      # Lista de abstracts tokenizados usados para treinar o modelo
         vector_size=100,  # Tamanho do vetor de representação para cada palavra (100 dimensões)
         window=window,       # Número de palavras antes e depois da palavra-alvo consideradas no contexto (janela de contexto)
-        min_count=2,    # Ignora palavras que aparecem menos de 2 vezes no corpus
-        sg=0,           # 1 para skip-gram ou 0 (default) para CBOW. CBOW: contexto ➜ palavra | Skip‑gram: palavra ➜ contexto
-        workers=4       # Número de threads utilizadas para acelerar o treinamento
+        min_count=1,    # Ignora palavras que aparecem menos de 2 vezes no corpus
+        sg=1,           # 1 para skip-gram ou 0 (default) para CBOW. CBOW: contexto ➜ palavra | Skip‑gram: palavra ➜ contexto
+        workers=4,       # Número de threads utilizadas para acelerar o treinamento
+        epochs=15
     )
  
     return model
 
 
 def count_connected_term_blocks(state, g):
-    """Retorna quantidade de blocos com (i) ≥1 termo e (ii) conectados."""
+    """Retorna quantidade de blocos com:
+     (i) um ou mais termos
+     (ii) conectados.
+    """
     blocks_vec   = state.get_blocks().a
     block_graph  = state.get_bg()
     # blocos cujo grau total > 0
@@ -334,7 +380,7 @@ def compare_vectors_vi_nmi(sbm_labels, w2v_labels):
     return vi, mi, nmi
 
 def compare_all_partitions(df, nlp, window_list):
-    """Para cada par (w_sbm, w_w2v) calcula VI / NMI e devolve duas matrizes."""
+    """Para cada par (w_sbm, w_w2v) calcula VI / NMI / ARI e devolve três matrizes."""
 
     # dataframes de saída
     results_vi  = pd.DataFrame(index=window_list, columns=window_list)
@@ -364,6 +410,10 @@ def compare_all_partitions(df, nlp, window_list):
         doc_term   = extract_doc_term_graph(g_full)
         print("Grafo DOC-TERM:")
         print(doc_term)
+
+        # # Impressão dos 3 grafos bases do projeto
+        # draw_base_graphs(g,g_doc_jan,g_doc_term, w_sbm)
+
         state = minimize_blockmodel_dl(
             g_jan_term,
             state_args={
