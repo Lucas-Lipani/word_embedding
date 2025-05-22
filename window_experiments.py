@@ -8,7 +8,7 @@ from collections import Counter
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')  # Usa backend para salvar arquivos, sem abrir janelas
-from graph_tool.all import (Graph, prop_to_size, graph_draw, sfdp_layout, minimize_blockmodel_dl, variation_information, mutual_information, partition_overlap)
+from graph_tool.all import (Graph, prop_to_size, LayeredBlockState, graph_draw, sfdp_layout, minimize_blockmodel_dl, variation_information, mutual_information, partition_overlap)
 from tqdm import tqdm
 from sklearn.cluster import KMeans
 from sklearn.metrics import adjusted_rand_score 
@@ -22,6 +22,7 @@ def initialize_graph():
     g = Graph(directed=False)
 
     name_prop = g.new_vertex_property("string")
+    layer_prop = g.new_edge_property("int")
     tipo_prop = g.new_vertex_property("int")
     short_term_prop = g.new_vertex_property("string")
     color_prop = g.new_vertex_property("vector<double>")
@@ -31,6 +32,7 @@ def initialize_graph():
     weight_prop = g.new_edge_property("int")
 
     g.vp["amount"] = amount_prop
+    g.ep["layer"] = layer_prop
     g.vp["size"] = size_prop
     g.vp["color"] = color_prop
     g.vp["name"] = name_prop
@@ -85,89 +87,200 @@ def draw_base_graphs(g, g_doc_jan, g_doc_term,window):
     )
 
 
+# def build_window_graph(g, df, nlp, w):
+#     """
+#     Cria o grafo Documento – Janela – Termo Central.
+#     Cada janela (identificada pelo conjunto de termos de contexto) conecta-se ao seu termo central.
+#     """
+#     g.vp["termos"] = g.new_vertex_property("object")
+
+#     window_vertex = {}  # frozenset(win_tokens) → vértice da janela
+#     term_vertex = {}    # termo → vértice
+#     doc_vertex = {}     # doc_id → vértice
+#     doc_y = term_y = win_y = 0
+
+#     for idx, row in tqdm(df.iterrows(), desc="Processando Doc-Jan-TermCentral", total=len(df)):
+#         doc_id = str(idx)
+#         abstract = row["abstract"]
+#         # abstract = "Janela de teste para analisar se está fazendo tudo certo, caso esteja tudo certo, irei analisar o próximo."
+
+#         # ───── Criar vértice do Documento ─────
+#         v_doc = g.add_vertex()
+#         g.vp["name"][v_doc] = doc_id
+#         g.vp["tipo"][v_doc] = 0
+#         g.vp["posicao"][v_doc] = [-15, doc_y]; doc_y += 1
+#         g.vp["size"][v_doc] = 20
+#         g.vp["color"][v_doc] = [1, 0, 0, 1]
+#         doc_vertex[doc_id] = v_doc
+
+#         # Tokenização
+#         doc_spacy = nlp(abstract)
+#         tokens = [tok.text.lower().strip()
+#                   for tok in doc_spacy
+#                   if not tok.is_stop and not tok.is_punct]
+
+#         w_local = len(tokens) if w == "full" else w
+
+#         for i in range(len(tokens)):
+#             start = max(0, i - w_local)
+#             end = min(len(tokens), i + w_local + 1)
+
+#             win_tokens = tokens[start:i] + tokens[i+1:end]
+#             term_central = tokens[i]
+#             win_key = frozenset(win_tokens)  # chave única baseada nos termos
+
+#             # Criar vértice de janela (se novo)
+#             if win_key not in window_vertex:
+#                 v_win = g.add_vertex()
+#                 window_vertex[win_key] = v_win
+#                 g.vp["name"][v_win] = " ".join(sorted(win_tokens))  # label ordenado p/ evitar duplicidade
+#                 g.vp["tipo"][v_win] = 3
+#                 g.vp["posicao"][v_win] = [0, win_y]; win_y += 2
+#                 g.vp["size"][v_win] = 12
+#                 g.vp["color"][v_win] = [0, 0.7, 0, 1]
+#                 g.vp["termos"][v_win] = win_tokens
+
+#             v_win = window_vertex[win_key]
+
+#             # Conectar Janela ao Termo Central
+#             if term_central not in term_vertex:
+#                 v_term = g.add_vertex()
+#                 term_vertex[term_central] = v_term
+#                 g.vp["name"][v_term] = term_central
+#                 g.vp["short_term"][v_term] = term_central[:3]
+#                 g.vp["tipo"][v_term] = 1
+#                 g.vp["posicao"][v_term] = [15, term_y]; term_y += 2
+#                 g.vp["size"][v_term] = 10
+#                 g.vp["color"][v_term] = [0, 0, 1, 1]
+#                 g.vp["amount"][v_term] = 1
+#             else:
+#                 v_term = term_vertex[term_central]
+#                 g.vp["amount"][v_term] += 1
+
+#             # Criar ou acumular aresta janela–termo central
+#             edge = g.edge(v_win, v_term, all_edges=False)
+#             if edge is None:
+#                 e = g.add_edge(v_win, v_term)
+#                 g.ep["weight"][e] = 1
+#             else:
+#                 g.ep["weight"][edge] += 1
+
+#             # Conectar Documento à Janela (se ainda não conectado)
+#             if g.edge(v_doc, v_win) is None:
+#                 e_dj = g.add_edge(v_doc, v_win)
+#                 g.ep["weight"][e_dj] = 1
+
+#     return g
+
 def build_window_graph(g, df, nlp, w):
     """
-    Cria o grafo Documento – Janela – Termo Central.
-    Cada janela (identificada pelo conjunto de termos de contexto) conecta-se ao seu termo central.
+    Constrói o grafo tripartido Documento – Janela – Termos num formato
+    multiplexo de 2 camadas:
+
+      camada 0 : arestas Janela → Termo central
+      camada 1 : arestas Janela → cada termo de contexto que compõe a janela
     """
     g.vp["termos"] = g.new_vertex_property("object")
 
-    window_vertex = {}  # frozenset(win_tokens) → vértice da janela
-    term_vertex = {}    # termo → vértice
-    doc_vertex = {}     # doc_id → vértice
+    window_vertex = {}          # chave (frozenset(win_tokens), term_central) → v_jan
+    term_vertex   = {}          # termo → v_term
+    doc_vertex    = {}          # doc_id → v_doc
+    doc_y = term_y = win_y = 0  # coordenadas para layout
 
-    doc_y = term_y = win_y = 0
+    for idx, row in tqdm(df.iterrows(), desc="Processando Doc-Jan-Termos", total=len(df)):
+        doc_id   = str(idx)
+        # abstract = row["abstract"]
+        abstract = "Janela de teste para analisar se está fazendo tudo certo, caso esteja tudo certo, irei analisar o próximo."
 
-    for idx, row in tqdm(df.iterrows(), desc="Processando Doc-Jan-TermCentral", total=len(df)):
-        doc_id = str(idx)
-        abstract = row["abstract"]
-        # abstract = "Janela de teste para analisar se está fazendo tudo certo, caso esteja tudo certo, irei analisar o próximo."
 
-        # ───── Criar vértice do Documento ─────
+        # ───── vértice Documento ─────
         v_doc = g.add_vertex()
-        g.vp["name"][v_doc] = doc_id
-        g.vp["tipo"][v_doc] = 0
+        g.vp["name"][v_doc], g.vp["tipo"][v_doc] = doc_id, 0
         g.vp["posicao"][v_doc] = [-15, doc_y]; doc_y += 1
-        g.vp["size"][v_doc] = 20
-        g.vp["color"][v_doc] = [1, 0, 0, 1]
+        g.vp["size"][v_doc], g.vp["color"][v_doc] = 20, [1, 0, 0, 1]
         doc_vertex[doc_id] = v_doc
 
-        # Tokenização
-        doc_spacy = nlp(abstract)
-        tokens = [tok.text.lower().strip()
-                  for tok in doc_spacy
-                  if not tok.is_stop and not tok.is_punct]
+        # tokenização
+        toks = [t.text.lower().strip()
+                for t in nlp(abstract)
+                if not t.is_stop and not t.is_punct]
 
-        w_local = len(tokens) if w == "full" else w
+        # 🛠️ robustez para janela textual
+        if w == "full":
+            w_local = len(toks)
+        else:
+            w_local = int(w)
 
-        for i in range(len(tokens)):
-            start = max(0, i - w_local)
-            end = min(len(tokens), i + w_local + 1)
+        # ───── janelas centradas em cada token ─────
+        for i, term_central in enumerate(toks):
+            start, end = max(0, i - w_local), min(len(toks), i + w_local + 1)
+            win_tokens = toks[start:i] + toks[i+1:end]          # contexto
+            win_key    = (frozenset(win_tokens), term_central)  # deduplicação
 
-            win_tokens = tokens[start:i] + tokens[i+1:end]
-            term_central = tokens[i]
-            win_key = frozenset(win_tokens)  # chave única baseada nos termos
-
-            # Criar vértice de janela (se novo)
+            # --- vértice Janela ---
             if win_key not in window_vertex:
                 v_win = g.add_vertex()
+                g.vp["name"][v_win]    = " ".join(win_tokens)    # ← como era antes
+                g.vp["tipo"][v_win]    = 3
+                g.vp["termos"][v_win]  = win_tokens
+                g.vp["posicao"][v_win] = [  0, win_y]; win_y += 2
+                g.vp["size"][v_win]    = 15
+                g.vp["color"][v_win]   = [0.6, 0.6, 0.6, 1]
                 window_vertex[win_key] = v_win
-                g.vp["name"][v_win] = " ".join(sorted(win_tokens))  # label ordenado p/ evitar duplicidade
-                g.vp["tipo"][v_win] = 3
-                g.vp["posicao"][v_win] = [0, win_y]; win_y += 2
-                g.vp["size"][v_win] = 12
-                g.vp["color"][v_win] = [0, 0.7, 0, 1]
-                g.vp["termos"][v_win] = win_tokens
+            else:
+                v_win = window_vertex[win_key]
 
-            v_win = window_vertex[win_key]
+            # ligar Doc → Janela
+            if g.edge(doc_vertex[doc_id], v_win) is None:
+                g.add_edge(doc_vertex[doc_id], v_win)
 
-            # Conectar Janela ao Termo Central
+            # --- vértice Termo Central ---
             if term_central not in term_vertex:
                 v_term = g.add_vertex()
+                g.vp["name"][v_term]    = term_central
+                g.vp["tipo"][v_term]    = 1
+                g.vp["posicao"][v_term] = [ 15, term_y]; term_y += 1
+                g.vp["size"][v_term]    = 10
+                g.vp["color"][v_term]   = [0, 0, 1, 1]
+                g.vp["amount"][v_term]  = 1
                 term_vertex[term_central] = v_term
-                g.vp["name"][v_term] = term_central
-                g.vp["short_term"][v_term] = term_central[:3]
-                g.vp["tipo"][v_term] = 1
-                g.vp["posicao"][v_term] = [15, term_y]; term_y += 2
-                g.vp["size"][v_term] = 10
-                g.vp["color"][v_term] = [0, 0, 1, 1]
-                g.vp["amount"][v_term] = 1
             else:
                 v_term = term_vertex[term_central]
                 g.vp["amount"][v_term] += 1
 
-            # Criar ou acumular aresta janela–termo central
-            edge = g.edge(v_win, v_term, all_edges=False)
-            if edge is None:
-                e = g.add_edge(v_win, v_term)
-                g.ep["weight"][e] = 1
+            # ╭─────────── camada 0: Jan → Termo central ───────────╮
+            e0 = g.edge(v_win, v_term)
+            if e0 is None:
+                e0 = g.add_edge(v_win, v_term)
+                g.ep["weight"][e0] = 1
+                g.ep["layer"][e0]  = 0
             else:
-                g.ep["weight"][edge] += 1
+                g.ep["weight"][e0] += 1
+            # ╰──────────────────────────────────────────────────────╯
 
-            # Conectar Documento à Janela (se ainda não conectado)
-            if g.edge(v_doc, v_win) is None:
-                e_dj = g.add_edge(v_doc, v_win)
-                g.ep["weight"][e_dj] = 1
+            # ╭─────────── camada 1: Jan → cada termo de contexto ───╮
+            for tok in win_tokens:
+                if tok not in term_vertex:
+                    v_tok = g.add_vertex()
+                    g.vp["name"][v_tok]    = tok
+                    g.vp["tipo"][v_tok]    = 1
+                    g.vp["posicao"][v_tok] = [15, term_y]; term_y += 1
+                    g.vp["size"][v_tok]    = 10
+                    g.vp["color"][v_tok]   = [0, 0, 1, 1]
+                    g.vp["amount"][v_tok]  = 1
+                    term_vertex[tok] = v_tok
+                else:
+                    v_tok = term_vertex[tok]
+                    g.vp["amount"][v_tok] += 1
+
+                e1 = g.edge(v_win, v_tok)
+                if e1 is None:
+                    e1 = g.add_edge(v_win, v_tok)
+                    g.ep["weight"][e1] = 1
+                    g.ep["layer"][e1]  = 1
+                else:
+                    g.ep["weight"][e1] += 1
+            # ╰──────────────────────────────────────────────────────╯
 
     return g
 
@@ -181,13 +294,14 @@ def extract_window_term_graph(g):
     :return: Subgrafo JANELA–TERMO
     """
     g_win_term = Graph(directed=False)
+    
 
     # Copiar propriedades
     for prop in g.vp.keys():
         g_win_term.vp[prop] = g_win_term.new_vertex_property(g.vp[prop].value_type())
     for prop in g.ep.keys():
         g_win_term.ep[prop] = g_win_term.new_edge_property(g.ep[prop].value_type())
-
+    
     # Mapear vértices válidos
     vertex_map = {}
     for v in g.vertices():
@@ -410,22 +524,37 @@ def compare_all_partitions(df, nlp, window_list):
         print("Grafo DOC-TERM:")
         print(doc_term)
 
-        #  # Impressão dos 3 grafos bases do projeto
+        # # #  # Impressão dos 3 grafos bases do projeto
         # draw_base_graphs(g_full,g_jan_term,doc_term, w_sbm)
         # exit()
 
-        state = minimize_blockmodel_dl(
+        # state = minimize_blockmodel_dl(
+        #     g_jan_term,
+        #     state_args={
+        #         "eweight": g_jan_term.ep["weight"],   # Usando os pesos das arestas, mas essa informação está de certa forma obsoleta
+        #         # "vweight": g_jan_term.vp["amount"],   # opcional
+        #         # "deg_corr": True,                     # Correção de grau, porém já vi na documentação que o default é true
+        #         "pclabel": g_jan_term.vp["tipo"]      # mantém tipos separados
+        #     },
+        #     # multilevel_mcmc_args={"B_min": 2, "B_max": 10}
+        # )
+        # Refinar com MCMC
+        # state.mcmc_sweep(niter=1000)  # Tenta mudar rótulos de vértices localmente
+
+
+        state = LayeredBlockState(
             g_jan_term,
-            state_args={
-                "eweight": g_jan_term.ep["weight"],   # Usando os pesos das arestas, mas essa informação está de certa forma obsoleta
-                # "vweight": g_jan_term.vp["amount"],   # opcional
-                # "deg_corr": True,                     # Correção de grau, porém já vi na documentação que o default é true
-                "pclabel": g_jan_term.vp["tipo"]      # mantém tipos separados
-            },
-            # multilevel_mcmc_args={"B_min": 2, "B_max": 10}
+            ec = g_jan_term.ep["layer"],
+            eweight = g_jan_term.ep["weight"],
+            layers = True,
+            pclabel= g_jan_term.vp["tipo"]
         )
+        # Refinar com MCMC
+        # state.multiflip_mcmc_sweep(niter=1000)
+        
         print("A saída do SBM:")
         print(state)
+        exit()
         # state = state.project_level(0)   # nível mais detalhado, use a função do nested e queira trabalhar como se não fosse nested.
 
         k_blocks = count_connected_term_blocks(state, g_jan_term)
@@ -508,7 +637,7 @@ if __name__ == "__main__":
     start = time.time()
 
     nlp = spacy.load("en_core_web_sm")
-    df  = pd.read_parquet("wos_sts_journals.parquet").sample(n=3000, random_state=42)
+    df  = pd.read_parquet("wos_sts_journals.parquet").sample(n=100, random_state=42)
 
     WINDOW_LIST = [5, 10, 20, "full"]
 
