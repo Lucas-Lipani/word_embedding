@@ -113,11 +113,11 @@ def draw_base_graphs(g, g_doc_jan, g_doc_term, window):
 
 def build_window_graph(g, df, nlp, w):
     """
-    Constrói o grafo tripartido Documento – Janela – Termos num formato
+    Constrói o grafo tripartido Documento – Janela de contexto – Termos num formato
     multiplexo de 2 camadas:
 
-      camada 0 : arestas Janela → Termo central
-      camada 1 : arestas Janela → cada termo de contexto que compõe a janela
+      camada 0 : arestas Janela de contexto → Termo central
+      camada 1 : arestas Janela de contexto → cada termo de contexto que compõe a janela
     """
     g.vp["termos"] = g.new_vertex_property("object")
 
@@ -131,7 +131,6 @@ def build_window_graph(g, df, nlp, w):
     ):
         doc_id = str(idx)
         abstract = row["abstract"]
-        # abstract = "Janela de teste para analisar se está fazendo tudo certo, caso esteja tudo certo, irei analisar o próximo."
 
         # ───── vértice Documento ─────
         v_doc = g.add_vertex()
@@ -148,7 +147,7 @@ def build_window_graph(g, df, nlp, w):
             if not t.is_stop and not t.is_punct
         ]
 
-        #  robustez para janela textual
+        #  tamanho da janela de contexto
         if w == "full":
             w_local = len(toks)
         else:
@@ -163,7 +162,7 @@ def build_window_graph(g, df, nlp, w):
             # --- vértice Janela ---
             if win_key not in window_vertex:
                 v_win = g.add_vertex()
-                g.vp["name"][v_win] = " ".join(win_tokens)  # ← como era antes
+                g.vp["name"][v_win] = " ".join(win_tokens)  
                 g.vp["tipo"][v_win] = 3
                 g.vp["termos"][v_win] = win_tokens
                 g.vp["posicao"][v_win] = [0, win_y]
@@ -234,7 +233,7 @@ def build_window_graph(g, df, nlp, w):
 def extract_window_term_graph(g):
     """
     Extrai um subgrafo contendo apenas vértices de tipo JANELA (3) e TERMO (1),
-    e as arestas que os conectam no grafo originalpclabel.
+    e as arestas que os conectam no grafo original.
 
     :param g: Grafo completo DOCUMENTO–JANELA–TERMO
     :return: Subgrafo JANELA–TERMO
@@ -386,6 +385,7 @@ def train_word2vec(df, nlp, window):
 
     :param df: DataFrame contendo uma coluna "abstract" com os textos a serem processados.
     :param nlp: Tokenizer do spaCy (por exemplo, "en_core_web_sm") para processar os textos e remover stop words e pontuações.
+    :param window: Tamanho da janela de conteto para o treinamento do modelo.
     :return: Um modelo Word2Vec treinado com os tokens extraídos dos abstracts.
     """
     sentences = []
@@ -412,9 +412,7 @@ def train_word2vec(df, nlp, window):
 
 
 def count_connected_term_blocks(state, g):
-    """Retorna quantidade de blocos com:
-    (i) um ou mais termos
-    (ii) conectados.
+    """Retorna quantidade de blocos de termo que possuem um ou mais arestas.
     """
     blocks_vec = state.get_blocks().a
     block_graph = state.get_bg()  # para LayeredBlockState
@@ -477,16 +475,6 @@ def compare_all_partitions(df, nlp, window_list):
         # # #  # Impressão dos 3 grafos bases do projeto
         # draw_base_graphs(g_full,g_jan_term,doc_term, w_sbm)
         # exit()
-        # state = minimize_blockmodel_dl(
-        #             g_jan_term,
-        #             # state = LayeredBlockState,
-        #             state_args = {
-        #                 # "ec": g_jan_term.ep["layer"],
-        #                 # "layers": True,
-        #                 "eweight": g_jan_term.ep["weight"],
-        #                 "pclabel": g_jan_term.vp["tipo"]
-        #             },
-        #         )
 
         state = minimize_blockmodel_dl(
             g_jan_term,
@@ -507,6 +495,7 @@ def compare_all_partitions(df, nlp, window_list):
         print(state)
         # state = state.project_level(0)   # nível mais detalhado, use a função do nested e queira trabalhar como se não fosse nested.
 
+        # definição da quantidade de clusters através do números de bocos de termos
         k_blocks = count_connected_term_blocks(state, g_jan_term)
         print(f"   blocos SBM (com termos e conexões) = {k_blocks}")
 
@@ -606,17 +595,17 @@ if __name__ == "__main__":
 
     # plot heatmaps
     plot_clean_heatmap(
-        nmi_mat, "NMI: SBM × Word2Vec", "outputs/window/cross_nmi.png", cmap="YlGnBu"
+        nmi_mat, "NMI: SBM x Word2Vec", "outputs/window/cross_nmi.png", cmap="YlGnBu"
     )
     plot_clean_heatmap(
         vi_mat,
-        "VI: SBM × Word2Vec",
+        "VI: SBM x Word2Vec",
         "outputs/window/cross_vi.png",
         cmap="YlOrBr",
         vmax=None,
     )
     plot_clean_heatmap(
-        ari_mat, "ARI: SBM × Word2Vec", "outputs/window/cross_ari.png", cmap="PuBuGn"
+        ari_mat, "ARI: SBM x Word2Vec", "outputs/window/cross_ari.png", cmap="PuBuGn"
     )
 
     print(f"\nTempo total: {time.time() - start:.2f} s")
