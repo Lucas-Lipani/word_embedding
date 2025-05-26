@@ -7,29 +7,42 @@ import pandas as pd
 from collections import Counter
 import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.use('Agg')  # Usa backend para salvar arquivos, sem abrir janelas
-from graph_tool.all import (Graph, prop_to_size, LayeredBlockState, graph_draw, sfdp_layout, minimize_blockmodel_dl, variation_information, mutual_information, partition_overlap)
+
+matplotlib.use("Agg")  # Usa backend para salvar arquivos, sem abrir janelas
+from graph_tool.all import (
+    Graph,
+    prop_to_size,
+    LayeredBlockState,
+    graph_draw,
+    sfdp_layout,
+    minimize_blockmodel_dl,
+    variation_information,
+    mutual_information,
+    partition_overlap,
+)
 from tqdm import tqdm
 from sklearn.cluster import KMeans
-from sklearn.metrics import adjusted_rand_score 
+from sklearn.metrics import adjusted_rand_score
+
 
 def initialize_graph():
     """
     Inicializa e configura um grafo não direcionado com as propriedades básicas baseado no projeto Sashimi.
-    
+
     :return: Um objeto Graph vazio com propriedades de vértice e de aresta definidas.
     """
     g = Graph(directed=False)
 
     name_prop = g.new_vertex_property("string")
-    layer_prop = g.new_edge_property("int")
     tipo_prop = g.new_vertex_property("int")
     short_term_prop = g.new_vertex_property("string")
     color_prop = g.new_vertex_property("vector<double>")
     posicao_prop = g.new_vertex_property("vector<double>")
     amount_prop = g.vp["amount"] = g.new_vertex_property("int")
     size_prop = g.new_vertex_property("double")
-    weight_prop = g.new_edge_property("int")
+
+    weight_prop = g.new_edge_property("long")
+    layer_prop = g.new_edge_property("int")
 
     g.vp["amount"] = amount_prop
     g.ep["layer"] = layer_prop
@@ -40,137 +53,63 @@ def initialize_graph():
     g.vp["short_term"] = short_term_prop
     g.vp["posicao"] = posicao_prop
     g.ep["weight"] = weight_prop
-    
+
     return g
 
-def draw_base_graphs(g, g_doc_jan, g_doc_term,window):
+
+def draw_base_graphs(g, g_doc_jan, g_doc_term, window):
 
     window = str(window)
 
     # Salva o grafo original DOCUMENTO - JANELAS - TERMOS
     graph_draw(
-    g,
-    #pos=sfdp_layout(g),           # Layout para posicionar os nós
-    pos = g.vp["posicao"],
-    vertex_text=g.vp["name"],     # Usa o rótulo armazenado na propriedade "name"
-    vertex_text_position = -2,
-    vertex_text_color = 'black',
-    vertex_font_size=10,  # Tamanho da fonte dos rótulos
-    vertex_fill_color=g.vp["color"],  # Define a cor dos vértices
-    output="outputs/window/window" + window + "_graph_d-j-t.pdf"  # Salva a visualização em PDF
+        g,
+        # pos=sfdp_layout(g),           # Layout para posicionar os nós
+        pos=g.vp["posicao"],
+        vertex_text=g.vp["name"],  # Usa o rótulo armazenado na propriedade "name"
+        vertex_text_position=-2,
+        vertex_text_color="black",
+        vertex_font_size=10,  # Tamanho da fonte dos rótulos
+        vertex_fill_color=g.vp["color"],  # Define a cor dos vértices
+        output="outputs/window/window"
+        + window
+        + "_graph_d-j-t.pdf",  # Salva a visualização em PDF
     )
 
     # Salva o grafo original DOCUMENTO - JANELAS
     graph_draw(
-    g_doc_jan,
-    #pos=sfdp_layout(g_doc_jan),           # Layout para posicionar os nós
-    pos = g_doc_jan.vp["posicao"],
-    vertex_text=g_doc_jan.vp["name"],     # Usa o rótulo armazenado na propriedade "name"
-    vertex_text_position = -2,
-    vertex_text_color = 'black',
-    vertex_font_size=10,  # Tamanho da fonte dos rótulos
-    vertex_fill_color=g_doc_jan.vp["color"],  # Define a cor dos vértices
-    output="outputs/window/window" + window + "_graph_d-j.pdf"  # Salva a visualização em PDF
+        g_doc_jan,
+        # pos=sfdp_layout(g_doc_jan),           # Layout para posicionar os nós
+        pos=g_doc_jan.vp["posicao"],
+        vertex_text=g_doc_jan.vp[
+            "name"
+        ],  # Usa o rótulo armazenado na propriedade "name"
+        vertex_text_position=-2,
+        vertex_text_color="black",
+        vertex_font_size=10,  # Tamanho da fonte dos rótulos
+        vertex_fill_color=g_doc_jan.vp["color"],  # Define a cor dos vértices
+        output="outputs/window/window"
+        + window
+        + "_graph_d-j.pdf",  # Salva a visualização em PDF
     )
 
     # Salva o grafo original DOCUMENTO - TERMOS
     graph_draw(
-    g_doc_term,
-    #pos=sfdp_layout(g_doc_term),           # Layout para posicionar os nós
-    pos = g_doc_term.vp["posicao"],
-    vertex_text=g_doc_term.vp["name"],     # Usa o rótulo armazenado na propriedade "name"
-    vertex_text_position = -2,
-    vertex_text_color = 'black',
-    vertex_font_size=10,  # Tamanho da fonte dos rótulos
-    vertex_fill_color=g_doc_term.vp["color"],  # Define a cor dos vértices
-    output="outputs/window/window" + window + "_graph_d-t.pdf"  # Salva a visualização em PDF
+        g_doc_term,
+        # pos=sfdp_layout(g_doc_term),           # Layout para posicionar os nós
+        pos=g_doc_term.vp["posicao"],
+        vertex_text=g_doc_term.vp[
+            "name"
+        ],  # Usa o rótulo armazenado na propriedade "name"
+        vertex_text_position=-2,
+        vertex_text_color="black",
+        vertex_font_size=10,  # Tamanho da fonte dos rótulos
+        vertex_fill_color=g_doc_term.vp["color"],  # Define a cor dos vértices
+        output="outputs/window/window"
+        + window
+        + "_graph_d-t.pdf",  # Salva a visualização em PDF
     )
 
-
-# def build_window_graph(g, df, nlp, w):
-#     """
-#     Cria o grafo Documento – Janela – Termo Central.
-#     Cada janela (identificada pelo conjunto de termos de contexto) conecta-se ao seu termo central.
-#     """
-#     g.vp["termos"] = g.new_vertex_property("object")
-
-#     window_vertex = {}  # frozenset(win_tokens) → vértice da janela
-#     term_vertex = {}    # termo → vértice
-#     doc_vertex = {}     # doc_id → vértice
-#     doc_y = term_y = win_y = 0
-
-#     for idx, row in tqdm(df.iterrows(), desc="Processando Doc-Jan-TermCentral", total=len(df)):
-#         doc_id = str(idx)
-#         abstract = row["abstract"]
-#         # abstract = "Janela de teste para analisar se está fazendo tudo certo, caso esteja tudo certo, irei analisar o próximo."
-
-#         # ───── Criar vértice do Documento ─────
-#         v_doc = g.add_vertex()
-#         g.vp["name"][v_doc] = doc_id
-#         g.vp["tipo"][v_doc] = 0
-#         g.vp["posicao"][v_doc] = [-15, doc_y]; doc_y += 1
-#         g.vp["size"][v_doc] = 20
-#         g.vp["color"][v_doc] = [1, 0, 0, 1]
-#         doc_vertex[doc_id] = v_doc
-
-#         # Tokenização
-#         doc_spacy = nlp(abstract)
-#         tokens = [tok.text.lower().strip()
-#                   for tok in doc_spacy
-#                   if not tok.is_stop and not tok.is_punct]
-
-#         w_local = len(tokens) if w == "full" else w
-
-#         for i in range(len(tokens)):
-#             start = max(0, i - w_local)
-#             end = min(len(tokens), i + w_local + 1)
-
-#             win_tokens = tokens[start:i] + tokens[i+1:end]
-#             term_central = tokens[i]
-#             win_key = frozenset(win_tokens)  # chave única baseada nos termos
-
-#             # Criar vértice de janela (se novo)
-#             if win_key not in window_vertex:
-#                 v_win = g.add_vertex()
-#                 window_vertex[win_key] = v_win
-#                 g.vp["name"][v_win] = " ".join(sorted(win_tokens))  # label ordenado p/ evitar duplicidade
-#                 g.vp["tipo"][v_win] = 3
-#                 g.vp["posicao"][v_win] = [0, win_y]; win_y += 2
-#                 g.vp["size"][v_win] = 12
-#                 g.vp["color"][v_win] = [0, 0.7, 0, 1]
-#                 g.vp["termos"][v_win] = win_tokens
-
-#             v_win = window_vertex[win_key]
-
-#             # Conectar Janela ao Termo Central
-#             if term_central not in term_vertex:
-#                 v_term = g.add_vertex()
-#                 term_vertex[term_central] = v_term
-#                 g.vp["name"][v_term] = term_central
-#                 g.vp["short_term"][v_term] = term_central[:3]
-#                 g.vp["tipo"][v_term] = 1
-#                 g.vp["posicao"][v_term] = [15, term_y]; term_y += 2
-#                 g.vp["size"][v_term] = 10
-#                 g.vp["color"][v_term] = [0, 0, 1, 1]
-#                 g.vp["amount"][v_term] = 1
-#             else:
-#                 v_term = term_vertex[term_central]
-#                 g.vp["amount"][v_term] += 1
-
-#             # Criar ou acumular aresta janela–termo central
-#             edge = g.edge(v_win, v_term, all_edges=False)
-#             if edge is None:
-#                 e = g.add_edge(v_win, v_term)
-#                 g.ep["weight"][e] = 1
-#             else:
-#                 g.ep["weight"][edge] += 1
-
-#             # Conectar Documento à Janela (se ainda não conectado)
-#             if g.edge(v_doc, v_win) is None:
-#                 e_dj = g.add_edge(v_doc, v_win)
-#                 g.ep["weight"][e_dj] = 1
-
-#     return g
 
 def build_window_graph(g, df, nlp, w):
     """
@@ -182,30 +121,34 @@ def build_window_graph(g, df, nlp, w):
     """
     g.vp["termos"] = g.new_vertex_property("object")
 
-    window_vertex = {}          # chave (frozenset(win_tokens), term_central) → v_jan
-    term_vertex   = {}          # termo → v_term
-    doc_vertex    = {}          # doc_id → v_doc
+    window_vertex = {}  # chave (frozenset(win_tokens), term_central) → v_jan
+    term_vertex = {}  # termo → v_term
+    doc_vertex = {}  # doc_id → v_doc
     doc_y = term_y = win_y = 0  # coordenadas para layout
 
-    for idx, row in tqdm(df.iterrows(), desc="Processando Doc-Jan-Termos", total=len(df)):
-        doc_id   = str(idx)
-        # abstract = row["abstract"]
-        abstract = "Janela de teste para analisar se está fazendo tudo certo, caso esteja tudo certo, irei analisar o próximo."
-
+    for idx, row in tqdm(
+        df.iterrows(), desc="Processando Doc-Jan-Termos", total=len(df)
+    ):
+        doc_id = str(idx)
+        abstract = row["abstract"]
+        # abstract = "Janela de teste para analisar se está fazendo tudo certo, caso esteja tudo certo, irei analisar o próximo."
 
         # ───── vértice Documento ─────
         v_doc = g.add_vertex()
         g.vp["name"][v_doc], g.vp["tipo"][v_doc] = doc_id, 0
-        g.vp["posicao"][v_doc] = [-15, doc_y]; doc_y += 1
+        g.vp["posicao"][v_doc] = [-15, doc_y]
+        doc_y += 1
         g.vp["size"][v_doc], g.vp["color"][v_doc] = 20, [1, 0, 0, 1]
         doc_vertex[doc_id] = v_doc
 
         # tokenização
-        toks = [t.text.lower().strip()
-                for t in nlp(abstract)
-                if not t.is_stop and not t.is_punct]
+        toks = [
+            t.text.lower().strip()
+            for t in nlp(abstract)
+            if not t.is_stop and not t.is_punct
+        ]
 
-        # 🛠️ robustez para janela textual
+        #  robustez para janela textual
         if w == "full":
             w_local = len(toks)
         else:
@@ -214,18 +157,19 @@ def build_window_graph(g, df, nlp, w):
         # ───── janelas centradas em cada token ─────
         for i, term_central in enumerate(toks):
             start, end = max(0, i - w_local), min(len(toks), i + w_local + 1)
-            win_tokens = toks[start:i] + toks[i+1:end]          # contexto
-            win_key    = (frozenset(win_tokens), term_central)  # deduplicação
+            win_tokens = toks[start:i] + toks[i + 1 : end]  # contexto
+            win_key = (frozenset(win_tokens), term_central)  # deduplicação
 
             # --- vértice Janela ---
             if win_key not in window_vertex:
                 v_win = g.add_vertex()
-                g.vp["name"][v_win]    = " ".join(win_tokens)    # ← como era antes
-                g.vp["tipo"][v_win]    = 3
-                g.vp["termos"][v_win]  = win_tokens
-                g.vp["posicao"][v_win] = [  0, win_y]; win_y += 2
-                g.vp["size"][v_win]    = 15
-                g.vp["color"][v_win]   = [0.6, 0.6, 0.6, 1]
+                g.vp["name"][v_win] = " ".join(win_tokens)  # ← como era antes
+                g.vp["tipo"][v_win] = 3
+                g.vp["termos"][v_win] = win_tokens
+                g.vp["posicao"][v_win] = [0, win_y]
+                win_y += 2
+                g.vp["size"][v_win] = 15
+                g.vp["color"][v_win] = [0.6, 0.6, 0.6, 1]
                 window_vertex[win_key] = v_win
             else:
                 v_win = window_vertex[win_key]
@@ -237,12 +181,13 @@ def build_window_graph(g, df, nlp, w):
             # --- vértice Termo Central ---
             if term_central not in term_vertex:
                 v_term = g.add_vertex()
-                g.vp["name"][v_term]    = term_central
-                g.vp["tipo"][v_term]    = 1
-                g.vp["posicao"][v_term] = [ 15, term_y]; term_y += 1
-                g.vp["size"][v_term]    = 10
-                g.vp["color"][v_term]   = [0, 0, 1, 1]
-                g.vp["amount"][v_term]  = 1
+                g.vp["name"][v_term] = term_central
+                g.vp["tipo"][v_term] = 1
+                g.vp["posicao"][v_term] = [15, term_y]
+                term_y += 1
+                g.vp["size"][v_term] = 10
+                g.vp["color"][v_term] = [0, 0, 1, 1]
+                g.vp["amount"][v_term] = 1
                 term_vertex[term_central] = v_term
             else:
                 v_term = term_vertex[term_central]
@@ -253,7 +198,7 @@ def build_window_graph(g, df, nlp, w):
             if e0 is None:
                 e0 = g.add_edge(v_win, v_term)
                 g.ep["weight"][e0] = 1
-                g.ep["layer"][e0]  = 0
+                g.ep["layer"][e0] = 0
             else:
                 g.ep["weight"][e0] += 1
             # ╰──────────────────────────────────────────────────────╯
@@ -262,12 +207,13 @@ def build_window_graph(g, df, nlp, w):
             for tok in win_tokens:
                 if tok not in term_vertex:
                     v_tok = g.add_vertex()
-                    g.vp["name"][v_tok]    = tok
-                    g.vp["tipo"][v_tok]    = 1
-                    g.vp["posicao"][v_tok] = [15, term_y]; term_y += 1
-                    g.vp["size"][v_tok]    = 10
-                    g.vp["color"][v_tok]   = [0, 0, 1, 1]
-                    g.vp["amount"][v_tok]  = 1
+                    g.vp["name"][v_tok] = tok
+                    g.vp["tipo"][v_tok] = 1
+                    g.vp["posicao"][v_tok] = [15, term_y]
+                    term_y += 1
+                    g.vp["size"][v_tok] = 10
+                    g.vp["color"][v_tok] = [0, 0, 1, 1]
+                    g.vp["amount"][v_tok] = 1
                     term_vertex[tok] = v_tok
                 else:
                     v_tok = term_vertex[tok]
@@ -277,7 +223,7 @@ def build_window_graph(g, df, nlp, w):
                 if e1 is None:
                     e1 = g.add_edge(v_win, v_tok)
                     g.ep["weight"][e1] = 1
-                    g.ep["layer"][e1]  = 1
+                    g.ep["layer"][e1] = 1
                 else:
                     g.ep["weight"][e1] += 1
             # ╰──────────────────────────────────────────────────────╯
@@ -288,20 +234,19 @@ def build_window_graph(g, df, nlp, w):
 def extract_window_term_graph(g):
     """
     Extrai um subgrafo contendo apenas vértices de tipo JANELA (3) e TERMO (1),
-    e as arestas que os conectam no grafo original.
-    
+    e as arestas que os conectam no grafo originalpclabel.
+
     :param g: Grafo completo DOCUMENTO–JANELA–TERMO
     :return: Subgrafo JANELA–TERMO
     """
     g_win_term = Graph(directed=False)
-    
 
     # Copiar propriedades
     for prop in g.vp.keys():
         g_win_term.vp[prop] = g_win_term.new_vertex_property(g.vp[prop].value_type())
     for prop in g.ep.keys():
         g_win_term.ep[prop] = g_win_term.new_edge_property(g.ep[prop].value_type())
-    
+
     # Mapear vértices válidos
     vertex_map = {}
     for v in g.vertices():
@@ -391,7 +336,7 @@ def extract_doc_term_graph(g):
 def cluster_terms(g, w2v_model, n_clusters):
     """
     Realiza a clusterização dos termos do grafo utilizando os vetores semânticos do modelo Word2Vec.
-    
+
     :param g: Grafo bipartido com a relação DOCUMENTOS - TERMOS.
     :param w2v_model: Modelo Word2Vec previamente treinado, usado para extrair vetores semânticos de termos.
     :param n_clusters: Número de clusters a serem formados, geralmente definido a partir do número de comunidades identificadas pelo SBM.
@@ -413,14 +358,14 @@ def cluster_terms(g, w2v_model, n_clusters):
                     term_vectors.append(vec)
             except KeyError:
                 pass
-    
+
     if len(term_vectors) == 0:
         print("Nenhum vetor de termo foi encontrado.")
         return {}
-    
+
     kmeans = KMeans(n_clusters=n_clusters, random_state=42)
     labels = kmeans.fit_predict(term_vectors)
-    
+
     idx = 0
     clusters = {}
     for v in g.vertices():
@@ -431,14 +376,14 @@ def cluster_terms(g, w2v_model, n_clusters):
             g.vp["cluster"][v] = label
             clusters.setdefault(label, []).append(v)
             idx += 1
-    
+
     return clusters
 
 
 def train_word2vec(df, nlp, window):
     """
     Processa os abstracts do corpus e treina um modelo Word2Vec usando os tokens obtidos.
-    
+
     :param df: DataFrame contendo uma coluna "abstract" com os textos a serem processados.
     :param nlp: Tokenizer do spaCy (por exemplo, "en_core_web_sm") para processar os textos e remover stop words e pontuações.
     :return: Um modelo Word2Vec treinado com os tokens extraídos dos abstracts.
@@ -454,28 +399,32 @@ def train_word2vec(df, nlp, window):
         sentences.append(tokens)
 
     model = Word2Vec(
-        sentences,      # Lista de abstracts tokenizados usados para treinar o modelo
+        sentences,  # Lista de abstracts tokenizados usados para treinar o modelo
         vector_size=100,  # Tamanho do vetor de representação para cada palavra (100 dimensões)
-        window=window,       # Número de palavras antes e depois da palavra-alvo consideradas no contexto (janela de contexto)
-        min_count=1,    # Ignora palavras que aparecem menos de 2 vezes no corpus
-        sg=1,           # 1 para skip-gram ou 0 (default) para CBOW. CBOW: contexto ➜ palavra | Skip‑gram: palavra ➜ contexto
-        workers=4,       # Número de threads utilizadas para acelerar o treinamento
-        epochs=15
+        window=window,  # Número de palavras antes e depois da palavra-alvo consideradas no contexto (janela de contexto)
+        min_count=1,  # Ignora palavras que aparecem menos de 2 vezes no corpus
+        sg=1,  # 1 para skip-gram ou 0 (default) para CBOW. CBOW: contexto ➜ palavra | Skip‑gram: palavra ➜ contexto
+        workers=4,  # Número de threads utilizadas para acelerar o treinamento
+        epochs=15,
     )
- 
+
     return model
 
 
 def count_connected_term_blocks(state, g):
     """Retorna quantidade de blocos com:
-     (i) um ou mais termos
-     (ii) conectados.
+    (i) um ou mais termos
+    (ii) conectados.
     """
-    blocks_vec   = state.get_blocks().a
-    block_graph  = state.get_bg()
+    blocks_vec = state.get_blocks().a
+    block_graph = state.get_bg()  # para LayeredBlockState
+
     # blocos cujo grau total > 0
-    connected = {int(v) for v in block_graph.vertices()
-                 if (v.out_degree() + v.in_degree()) > 0}
+    connected = {
+        int(v)
+        for v in block_graph[0].vertices()
+        if (v.out_degree() + v.in_degree()) > 0
+    }
     term_blocks = set()
     for v in g.vertices():
         if int(g.vp["tipo"][v]) == 1:
@@ -484,22 +433,23 @@ def count_connected_term_blocks(state, g):
                 term_blocks.add(b)
     return len(term_blocks)
 
+
 def compare_vectors_vi_nmi(sbm_labels, w2v_labels):
     """Calcula VI, MI, NMI para dois vetores de rótulos numpy."""
     vi = variation_information(sbm_labels, w2v_labels)
-    mi = mutual_information  (sbm_labels, w2v_labels)
-    po = partition_overlap   (sbm_labels, w2v_labels)
+    mi = mutual_information(sbm_labels, w2v_labels)
+    po = partition_overlap(sbm_labels, w2v_labels)
     nmi = po[2] if isinstance(po, (tuple, list, np.ndarray)) else po
     return vi, mi, nmi
+
 
 def compare_all_partitions(df, nlp, window_list):
     """Para cada par (w_sbm, w_w2v) calcula VI / NMI / ARI e devolve três matrizes."""
 
     # dataframes de saída
-    results_vi  = pd.DataFrame(index=window_list, columns=window_list)
+    results_vi = pd.DataFrame(index=window_list, columns=window_list)
     results_nmi = pd.DataFrame(index=window_list, columns=window_list)
     results_ari = pd.DataFrame(index=window_list, columns=window_list)
-
 
     # cache de modelos Word2Vec: { janela : modelo }
     w2v_models = {}
@@ -520,41 +470,41 @@ def compare_all_partitions(df, nlp, window_list):
         print("Grafo JAN-TERM:")
         print(g_jan_term)
 
-        doc_term   = extract_doc_term_graph(g_full)
+        doc_term = extract_doc_term_graph(g_full)
         print("Grafo DOC-TERM:")
         print(doc_term)
 
         # # #  # Impressão dos 3 grafos bases do projeto
         # draw_base_graphs(g_full,g_jan_term,doc_term, w_sbm)
         # exit()
-
         # state = minimize_blockmodel_dl(
-        #     g_jan_term,
-        #     state_args={
-        #         "eweight": g_jan_term.ep["weight"],   # Usando os pesos das arestas, mas essa informação está de certa forma obsoleta
-        #         # "vweight": g_jan_term.vp["amount"],   # opcional
-        #         # "deg_corr": True,                     # Correção de grau, porém já vi na documentação que o default é true
-        #         "pclabel": g_jan_term.vp["tipo"]      # mantém tipos separados
-        #     },
-        #     # multilevel_mcmc_args={"B_min": 2, "B_max": 10}
-        # )
+        #             g_jan_term,
+        #             # state = LayeredBlockState,
+        #             state_args = {
+        #                 # "ec": g_jan_term.ep["layer"],
+        #                 # "layers": True,
+        #                 "eweight": g_jan_term.ep["weight"],
+        #                 "pclabel": g_jan_term.vp["tipo"]
+        #             },
+        #         )
+
+        state = minimize_blockmodel_dl(
+            g_jan_term,
+            state=LayeredBlockState,  # modelo adequado a camadas
+            state_args=dict(
+                ec=g_jan_term.ep["layer"],  # mapa de camadas/discretas
+                layers=True,  # versão “camadas independentes”
+                eweight=g_jan_term.ep["weight"],  # (opcional) multiplicidade da aresta
+                pclabel=g_jan_term.vp[
+                    "tipo"
+                ],  # mantém janelas e termos em grupos separados
+            ),
+        )
         # Refinar com MCMC
         # state.mcmc_sweep(niter=1000)  # Tenta mudar rótulos de vértices localmente
 
-
-        state = LayeredBlockState(
-            g_jan_term,
-            ec = g_jan_term.ep["layer"],
-            eweight = g_jan_term.ep["weight"],
-            layers = True,
-            pclabel= g_jan_term.vp["tipo"]
-        )
-        # Refinar com MCMC
-        # state.multiflip_mcmc_sweep(niter=1000)
-        
         print("A saída do SBM:")
         print(state)
-        exit()
         # state = state.project_level(0)   # nível mais detalhado, use a função do nested e queira trabalhar como se não fosse nested.
 
         k_blocks = count_connected_term_blocks(state, g_jan_term)
@@ -562,9 +512,11 @@ def compare_all_partitions(df, nlp, window_list):
 
         # mapa termo → bloco (preciso para vetores paralelos)
         blocks_vec = state.get_blocks().a
-        term_to_block = {g_jan_term.vp["name"][v]: int(blocks_vec[int(v)])
-                         for v in g_jan_term.vertices()
-                         if int(g_jan_term.vp["tipo"][v]) == 1}
+        term_to_block = {
+            g_jan_term.vp["name"][v]: int(blocks_vec[int(v)])
+            for v in g_jan_term.vertices()
+            if int(g_jan_term.vp["tipo"][v]) == 1
+        }
 
         # ------------------------------------------------
         # 2. loop sobre janela Word2Vec (w_w2v)
@@ -598,11 +550,11 @@ def compare_all_partitions(df, nlp, window_list):
                 sbm_arr = np.array(sbm_labels)
                 w2v_arr = np.array(w2v_labels)
                 vi, mi, nmi = compare_vectors_vi_nmi(sbm_arr, w2v_arr)
-                ari = adjusted_rand_score(sbm_arr, w2v_arr) 
+                ari = adjusted_rand_score(sbm_arr, w2v_arr)
             else:
                 vi = nmi = ari = np.nan
 
-            results_vi.loc[w_sbm,  w_w2v] = vi
+            results_vi.loc[w_sbm, w_w2v] = vi
             results_nmi.loc[w_sbm, w_w2v] = nmi
             results_ari.loc[w_sbm, w_w2v] = ari
 
@@ -618,8 +570,17 @@ def plot_clean_heatmap(matrix, title, filename, cmap, vmin=0, vmax=1):
     matrix_plot = matrix.astype(float).fillna(-1)
 
     fig, ax = plt.subplots(figsize=(8, 6))
-    sns.heatmap(matrix_plot, annot=True, fmt=".2f", cmap=cmap,
-                cbar=True, vmin=vmin, vmax=vmax, ax=ax, linewidths=0.5)
+    sns.heatmap(
+        matrix_plot,
+        annot=True,
+        fmt=".2f",
+        cmap=cmap,
+        cbar=True,
+        vmin=vmin,
+        vmax=vmax,
+        ax=ax,
+        linewidths=0.5,
+    )
 
     for text in ax.texts:
         if text.get_text() == "-1.00":
@@ -637,17 +598,25 @@ if __name__ == "__main__":
     start = time.time()
 
     nlp = spacy.load("en_core_web_sm")
-    df  = pd.read_parquet("wos_sts_journals.parquet").sample(n=100, random_state=42)
+    df = pd.read_parquet("wos_sts_journals.parquet").sample(n=300, random_state=42)
 
-    WINDOW_LIST = [5, 10, 20, "full"]
+    WINDOW_LIST = [5, 10, 20, 40, 50, "full"]
 
     vi_mat, nmi_mat, ari_mat = compare_all_partitions(df, nlp, WINDOW_LIST)
 
     # plot heatmaps
-    plot_clean_heatmap(nmi_mat, "NMI: SBM × Word2Vec", "outputs/window/cross_nmi.png", cmap="YlGnBu")
-    plot_clean_heatmap(vi_mat,  "VI: SBM × Word2Vec",  "outputs/window/cross_vi.png",  cmap="YlOrBr", vmax=None)
-    plot_clean_heatmap(ari_mat, "ARI: SBM × Word2Vec", "outputs/window/cross_ari.png", cmap="PuBuGn")
-
+    plot_clean_heatmap(
+        nmi_mat, "NMI: SBM × Word2Vec", "outputs/window/cross_nmi.png", cmap="YlGnBu"
+    )
+    plot_clean_heatmap(
+        vi_mat,
+        "VI: SBM × Word2Vec",
+        "outputs/window/cross_vi.png",
+        cmap="YlOrBr",
+        vmax=None,
+    )
+    plot_clean_heatmap(
+        ari_mat, "ARI: SBM × Word2Vec", "outputs/window/cross_ari.png", cmap="PuBuGn"
+    )
 
     print(f"\nTempo total: {time.time() - start:.2f} s")
-
