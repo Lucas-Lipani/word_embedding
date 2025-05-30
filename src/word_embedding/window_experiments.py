@@ -1,3 +1,4 @@
+from pathlib import Path
 import time
 import seaborn as sns
 import spacy
@@ -8,13 +9,12 @@ from collections import Counter
 import matplotlib.pyplot as plt
 import matplotlib
 
-matplotlib.use("Agg")  # Usa backend para salvar arquivos, sem abrir janelas
 from graph_tool.all import (
     Graph,
-    prop_to_size,
-    LayeredBlockState,
+    # prop_to_size,
+    # LayeredBlockState,
     graph_draw,
-    sfdp_layout,
+    # sfdp_layout,
     minimize_blockmodel_dl,
     variation_information,
     mutual_information,
@@ -24,10 +24,16 @@ from tqdm import tqdm
 from sklearn.cluster import KMeans
 from sklearn.metrics import adjusted_rand_score
 
+from collections import defaultdict
+
+
+matplotlib.use("Agg")  # Usa backend para salvar arquivos, sem abrir janelas
+
 
 def initialize_graph():
     """
-    Inicializa e configura um grafo não direcionado com as propriedades básicas baseado no projeto Sashimi.
+    Inicializa e configura um grafo não direcionado com as propriedades básicas baseado
+    no projeto Sashimi.
 
     :return: Um objeto Graph vazio com propriedades de vértice e de aresta definidas.
     """
@@ -148,7 +154,8 @@ def build_window_graph(g, df, nlp, w):
     ):
         doc_id = str(idx)
         abstract = row["abstract"]
-        # abstract = "Janela de teste para analisar se está fazendo tudo certo, caso esteja tudo certo, irei analisar o próximo."
+        # abstract = ("Janela de teste para analisar se está fazendo tudo certo, caso "
+        # "esteja tudo certo, irei analisar o próximo.")
 
         # ───── vértice Documento ─────
         v_doc = g.add_vertex()
@@ -439,14 +446,22 @@ def extract_doc_term_graph(g):
     return g_doc_term
 
 
+def kmeans_clustering(w2v_model, n_clusters):
+    pass
+
+
 def cluster_terms(g, w2v_model, n_clusters):
     """
-    Realiza a clusterização dos termos do grafo utilizando os vetores semânticos do modelo Word2Vec.
+    Realiza a clusterização dos termos do grafo utilizando os vetores semânticos do
+    modelo Word2Vec.
 
     :param g: Grafo bipartido com a relação DOCUMENTOS - TERMOS.
-    :param w2v_model: Modelo Word2Vec previamente treinado, usado para extrair vetores semânticos de termos.
-    :param n_clusters: Número de clusters a serem formados, geralmente definido a partir do número de comunidades identificadas pelo SBM.
-    :return: Dicionário onde as chaves são os rótulos dos clusters e os valores são listas de vértices (termos) que pertencem a cada cluster.
+    :param w2v_model: Modelo Word2Vec previamente treinado, usado para extrair vetores
+    semânticos de termos.
+    :param n_clusters: Número de clusters a serem formados, geralmente definido a partir
+    do número de comunidades identificadas pelo SBM.
+    :return: Dicionário onde as chaves são os rótulos dos clusters e os valores são
+    listas de vértices (termos) que pertencem a cada cluster.
     """
     cluster_prop = g.new_vertex_property("int")
     g.vp["cluster"] = cluster_prop
@@ -488,10 +503,13 @@ def cluster_terms(g, w2v_model, n_clusters):
 
 def train_word2vec(df, nlp, window):
     """
-    Processa os abstracts do corpus e treina um modelo Word2Vec usando os tokens obtidos.
+    Processa os abstracts do corpus e treina um modelo Word2Vec usando os tokens
+    obtidos.
 
-    :param df: DataFrame contendo uma coluna "abstract" com os textos a serem processados.
-    :param nlp: Tokenizer do spaCy (por exemplo, "en_core_web_sm") para processar os textos e remover stop words e pontuações.
+    :param df: DataFrame contendo uma coluna "abstract" com os textos a serem
+    processados.
+    :param nlp: Tokenizer do spaCy (por exemplo, "en_core_web_sm") para processar os
+    textos e remover stop words e pontuações.
     :param window: Tamanho da janela de conteto para o treinamento do modelo.
     :return: Um modelo Word2Vec treinado com os tokens extraídos dos abstracts.
     """
@@ -506,19 +524,23 @@ def train_word2vec(df, nlp, window):
         sentences.append(tokens)
 
     model = Word2Vec(
-        sentences,  # Lista de abstracts tokenizados usados para treinar o modelo
-        vector_size=100,  # Tamanho do vetor de representação para cada palavra (100 dimensões)
-        window=window,  # Número de palavras antes e depois da palavra-alvo consideradas no contexto (janela de contexto)
-        min_count=1,  # Ignora palavras que aparecem menos de 2 vezes no corpus
-        sg=1,  # 1 para skip-gram ou 0 (default) para CBOW. CBOW: contexto ➜ palavra | Skip‑gram: palavra ➜ contexto
+        # Lista de abstracts tokenizados usados para treinar o modelo
+        sentences,
+        # Tamanho do vetor de representação para cada palavra (100 dimensões)
+        vector_size=100,
+        # Número de palavras antes e depois da palavra-alvo consideradas no contexto
+        # (janela de contexto)
+        window=window,
+        # Ignora palavras que aparecem menos de 2 vezes no corpus
+        min_count=1,
+        # 1 para skip-gram ou 0 (default) para CBOW. CBOW: contexto ➜ palavra
+        # | Skip‑gram: palavra ➜ contexto
+        sg=1,
         workers=4,  # Número de threads utilizadas para acelerar o treinamento
         epochs=15,
     )
 
     return model
-
-
-from collections import defaultdict
 
 
 def count_connected_term_blocks(state, g):
@@ -556,11 +578,11 @@ def count_connected_term_blocks(state, g):
     return len(term_blocks)
 
 
-def compare_vectors_vi_nmi(sbm_labels, w2v_labels):
+def compare_labels_multimetrics(labels_left, labels_right):
     """Calcula VI, MI, NMI para dois vetores de rótulos numpy."""
-    vi = variation_information(sbm_labels, w2v_labels)
-    mi = mutual_information(sbm_labels, w2v_labels)
-    po = partition_overlap(sbm_labels, w2v_labels)
+    vi = variation_information(labels_left, labels_right)
+    mi = mutual_information(labels_left, labels_right)
+    po = partition_overlap(labels_left, labels_right)
     nmi = po[2] if isinstance(po, (tuple, list, np.ndarray)) else po
     return vi, mi, nmi
 
@@ -579,20 +601,25 @@ def compare_same_model_partitions(model_outputs, window_list, model_name="SBM"):
                     np.nan
                 )
                 continue
-            vi, mi, nmi = compare_vectors_vi_nmi(np.array(labels_i), np.array(labels_j))
+            vi, mi, nmi = compare_labels_multimetrics(
+                np.array(labels_i), np.array(labels_j)
+            )
             ari = adjusted_rand_score(labels_i, labels_j)
             results_vi.loc[i, j] = vi
             results_nmi.loc[i, j] = nmi
             results_ari.loc[i, j] = ari
 
+    out_dir = Path("outputs")
+    window_dir = out_dir / "window"
+
     results_vi.to_csv(
-        f"outputs/window/{model_name.lower()}_vs_{model_name.lower()}_vi.csv"
+        window_dir / f"{model_name.lower()}_vs_{model_name.lower()}_vi.csv"
     )
     results_nmi.to_csv(
-        f"outputs/window/{model_name.lower()}_vs_{model_name.lower()}_nmi.csv"
+        window_dir / f"{model_name.lower()}_vs_{model_name.lower()}_nmi.csv"
     )
     results_ari.to_csv(
-        f"outputs/window/{model_name.lower()}_vs_{model_name.lower()}_ari.csv"
+        window_dir / f"{model_name.lower()}_vs_{model_name.lower()}_ari.csv"
     )
 
     plot_clean_heatmap(
@@ -616,6 +643,10 @@ def compare_same_model_partitions(model_outputs, window_list, model_name="SBM"):
     )
 
     return results_vi, results_nmi, results_ari
+
+
+def compare_partitions():
+    pass
 
 
 def compare_all_partitions(df, nlp, window_list):
@@ -665,7 +696,8 @@ def compare_all_partitions(df, nlp, window_list):
 
         print("State do SBM:")
         print(state)
-        # state = state.project_level(0)   # nível mais detalhado, use a função do nested e queira trabalhar como se não fosse nested.
+        # state = state.project_level(0) # nível mais detalhado, use a função do
+        # nested e queira trabalhar como se não fosse nested.
 
         # definição da quantidade de clusters através do números de bocos de termos
         k_blocks = count_connected_term_blocks(state, g_con_jan_term)
@@ -689,7 +721,7 @@ def compare_all_partitions(df, nlp, window_list):
             w2v_model = w2v_models[w_w2v]
 
             g_dt = doc_term.copy()
-            clusters = cluster_terms(g_dt, w2v_model, n_clusters=k_blocks)
+            _ = cluster_terms(g_dt, w2v_model, n_clusters=k_blocks)
 
             sbm_labels = []
             w2v_labels = []
@@ -708,7 +740,7 @@ def compare_all_partitions(df, nlp, window_list):
             if len(set(w2v_labels)) > 1 and len(set(sbm_labels)) > 1:
                 sbm_arr = np.array(sbm_labels)
                 w2v_arr = np.array(w2v_labels)
-                vi, mi, nmi = compare_vectors_vi_nmi(sbm_arr, w2v_arr)
+                vi, mi, nmi = compare_labels_multimetrics(sbm_arr, w2v_arr)
                 ari = adjusted_rand_score(sbm_arr, w2v_arr)
             else:
                 vi = nmi = ari = np.nan
@@ -755,7 +787,7 @@ def plot_clean_heatmap(matrix, title, filename, cmap, vmin=0, vmax=1):
     plt.close()
 
 
-if __name__ == "__main__":
+def main():
     start = time.time()
 
     nlp = spacy.load("en_core_web_sm")
@@ -781,3 +813,7 @@ if __name__ == "__main__":
     )
 
     print(f"\nTempo total: {time.time() - start:.2f} s")
+
+
+if __name__ == "__main__":
+    main()
