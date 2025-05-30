@@ -57,7 +57,7 @@ def initialize_graph():
     return g
 
 
-def draw_base_graphs(g, g_doc_jan, g_doc_term, window):
+def draw_base_graphs(g, g_doc_jan, g_doc_term, g_con_jan_term, window):
 
     window = str(window)
 
@@ -110,6 +110,23 @@ def draw_base_graphs(g, g_doc_jan, g_doc_term, window):
         + "_graph_d-t.pdf",  # Salva a visualização em PDF
     )
 
+    # Salva o grafo original DOCUMENTO - TERMOS
+    graph_draw(
+        g_con_jan_term,
+        # pos=sfdp_layout(g_con_jan_term),           # Layout para posicionar os nós
+        pos=g_con_jan_term.vp["posicao"],
+        vertex_text=g_con_jan_term.vp[
+            "name"
+        ],  # Usa o rótulo armazenado na propriedade "name"
+        vertex_text_position=-2,
+        vertex_text_color="black",
+        vertex_font_size=10,  # Tamanho da fonte dos rótulos
+        vertex_fill_color=g_con_jan_term.vp["color"],  # Define a cor dos vértices
+        output="outputs/window/window"
+        + window
+        + "_graph_c-j-t.pdf",  # Salva a visualização em PDF
+    )
+
 
 def build_window_graph(g, df, nlp, w):
     """
@@ -131,6 +148,7 @@ def build_window_graph(g, df, nlp, w):
     ):
         doc_id = str(idx)
         abstract = row["abstract"]
+        # abstract = "Janela de teste para analisar se está fazendo tudo certo, caso esteja tudo certo, irei analisar o próximo."
 
         # ───── vértice Documento ─────
         v_doc = g.add_vertex()
@@ -162,7 +180,7 @@ def build_window_graph(g, df, nlp, w):
             # --- vértice Janela ---
             if win_key not in window_vertex:
                 v_win = g.add_vertex()
-                g.vp["name"][v_win] = " ".join(win_tokens)  
+                g.vp["name"][v_win] = " ".join(win_tokens)
                 g.vp["tipo"][v_win] = 3
                 g.vp["termos"][v_win] = win_tokens
                 g.vp["posicao"][v_win] = [0, win_y]
@@ -265,6 +283,95 @@ def extract_window_term_graph(g):
                 g_win_term.ep[prop][e_new] = g.ep[prop][e]
 
     return g_win_term
+
+
+def extract_context_window_term_graph(g_jan_term):
+    """
+    Constrói grafo tripartido:
+      termo como contexto (tipo 4) → janela (tipo 3) → termo central (tipo 1)
+
+    Arestas originais de layer=1 (janela–termo contexto) são removidas.
+    Para cada uma, cria-se um novo vértice tipo 4 (contextualização do termo),
+    que será ligado à janela via layer=0.
+
+    As posições são definidas por tipo:
+      tipo 4 → x=-15, tipo 3 → x=0, tipo 1 → x=15
+    """
+    g = initialize_graph()
+
+    cont_y = win_y = term_y = 0
+
+    # mapas: termo → v_term, janela → v_win, termo_contexto_nome → v_ctx
+    term_map = {}
+    win_map = {}
+    ctx_map = {}
+    g.vp["termos"] = g.new_vertex_property("object")
+
+    for v in g_jan_term.vertices():
+        tipo = int(g_jan_term.vp["tipo"][v])
+        nome = g_jan_term.vp["name"][v]
+
+        if tipo == 1:
+            v_term = g.add_vertex()
+            g.vp["name"][v_term] = nome
+            g.vp["tipo"][v_term] = 1
+            g.vp["posicao"][v_term] = [15, term_y]
+            g.vp["color"][v_term] = [0, 0, 1, 1]
+            g.vp["size"][v_term] = 10
+            term_y += 1
+            term_map[int(v)] = v_term
+
+        elif tipo == 3:
+            v_win = g.add_vertex()
+            g.vp["name"][v_win] = nome
+            g.vp["tipo"][v_win] = 3
+            g.vp["posicao"][v_win] = [0, win_y]
+            g.vp["color"][v_win] = [0.6, 0.6, 0.6, 1]
+            g.vp["size"][v_win] = 15
+            win_y += 1
+            win_map[int(v)] = v_win
+
+    # percorre arestas
+    for e in g_jan_term.edges():
+        layer = int(g_jan_term.ep["layer"][e])
+        v1, v2 = e.source(), e.target()
+        tipo1 = int(g_jan_term.vp["tipo"][v1])
+        tipo2 = int(g_jan_term.vp["tipo"][v2])
+        peso = int(g_jan_term.ep["weight"][e])
+
+        # caso layer = 0 → Janela ↔ Termo central → mantém igual
+        if layer == 0 and {tipo1, tipo2} == {1, 3}:
+            id_win = int(v1) if tipo1 == 3 else int(v2)
+            id_term = int(v1) if tipo1 == 1 else int(v2)
+            v_win = win_map[id_win]
+            v_term = term_map[id_term]
+            e_new = g.add_edge(v_win, v_term)
+            g.ep["layer"][e_new] = 0
+            g.ep["weight"][e_new] = peso
+
+        # caso layer = 1 → transformar em termo como contexto
+        elif layer == 1 and {tipo1, tipo2} == {1, 3}:
+            v_term, v_win = (v1, v2) if tipo1 == 1 else (v2, v1)
+            nome_ctx = g_jan_term.vp["name"][v_term]
+            chave_ctx = f"{nome_ctx}<{int(v_term)}>"
+            if chave_ctx not in ctx_map:
+                v_ctx = g.add_vertex()
+                g.vp["name"][v_ctx] = f"<<{nome_ctx}>>"
+                g.vp["tipo"][v_ctx] = 4
+                g.vp["posicao"][v_ctx] = [-15, cont_y]
+                g.vp["color"][v_ctx] = [1, 0.6, 0, 1]
+                g.vp["size"][v_ctx] = 10
+                cont_y += 1
+                ctx_map[chave_ctx] = v_ctx
+            else:
+                v_ctx = ctx_map[chave_ctx]
+
+            v_win_new = win_map[int(v_win)]
+            e_new = g.add_edge(v_ctx, v_win_new)
+            g.ep["layer"][e_new] = 0  # agora é camada 0 (não mais 1)
+            g.ep["weight"][e_new] = peso
+
+    return g
 
 
 def extract_doc_term_graph(g):
@@ -411,24 +518,41 @@ def train_word2vec(df, nlp, window):
     return model
 
 
+from collections import defaultdict
+
+
 def count_connected_term_blocks(state, g):
-    """Retorna quantidade de blocos de termo que possuem um ou mais arestas.
+    """Retorna quantidade de blocos de termo (tipo 1) com vértices conectados.
+    Também imprime, para depuração, a quantidade de blocos conectados por tipo.
     """
     blocks_vec = state.get_blocks().a
-    block_graph = state.get_bg()  # para LayeredBlockState
 
-    # blocos cujo grau total > 0
-    connected = {
-        int(v)
-        for v in block_graph[0].vertices()
-        if (v.out_degree() + v.in_degree()) > 0
-    }
-    term_blocks = set()
+    # bloco é considerado ativo se tem vértices com arestas no grafo original
+    connected_blocks = set()
     for v in g.vertices():
-        if int(g.vp["tipo"][v]) == 1:
-            b = int(blocks_vec[int(v)])
-            if b in connected:
-                term_blocks.add(b)
+        if v.out_degree() + v.in_degree() > 0:
+            bloco = int(blocks_vec[int(v)])
+            connected_blocks.add(bloco)
+
+    blocks_by_type = defaultdict(set)
+    term_blocks = set()
+
+    for v in g.vertices():
+        tipo = int(g.vp["tipo"][v])
+        bloco = int(blocks_vec[int(v)])
+        if bloco in connected_blocks:
+            blocks_by_type[tipo].add(bloco)
+            if tipo == 1:
+                term_blocks.add(bloco)
+
+    # print de conferência
+    print("\n[Depuração] Blocos conectados por tipo:")
+    for tipo, blocos in sorted(blocks_by_type.items()):
+        nome = {0: "Documento", 1: "Termo", 3: "Janela", 4: "Contexto"}.get(
+            tipo, f"Tipo {tipo}"
+        )
+        print(f"  - {nome:<10}: {len(blocos)} blocos")
+
     return len(term_blocks)
 
 
@@ -441,20 +565,68 @@ def compare_vectors_vi_nmi(sbm_labels, w2v_labels):
     return vi, mi, nmi
 
 
-def compare_all_partitions(df, nlp, window_list):
-    """Para cada par (w_sbm, w_w2v) calcula VI / NMI / ARI e devolve três matrizes."""
-
-    # dataframes de saída
+def compare_same_model_partitions(model_outputs, window_list, model_name="SBM"):
     results_vi = pd.DataFrame(index=window_list, columns=window_list)
     results_nmi = pd.DataFrame(index=window_list, columns=window_list)
     results_ari = pd.DataFrame(index=window_list, columns=window_list)
 
-    # cache de modelos Word2Vec: { janela : modelo }
-    w2v_models = {}
+    for i in window_list:
+        for j in window_list:
+            labels_i = model_outputs[i]
+            labels_j = model_outputs[j]
+            if len(labels_i) != len(labels_j):
+                results_vi.loc[i, j] = results_nmi.loc[i, j] = results_ari.loc[i, j] = (
+                    np.nan
+                )
+                continue
+            vi, mi, nmi = compare_vectors_vi_nmi(np.array(labels_i), np.array(labels_j))
+            ari = adjusted_rand_score(labels_i, labels_j)
+            results_vi.loc[i, j] = vi
+            results_nmi.loc[i, j] = nmi
+            results_ari.loc[i, j] = ari
 
-    # ----------------------------------------------------
-    # 1. loop sobre janela do SBM (w_sbm)
-    # ----------------------------------------------------
+    results_vi.to_csv(
+        f"outputs/window/{model_name.lower()}_vs_{model_name.lower()}_vi.csv"
+    )
+    results_nmi.to_csv(
+        f"outputs/window/{model_name.lower()}_vs_{model_name.lower()}_nmi.csv"
+    )
+    results_ari.to_csv(
+        f"outputs/window/{model_name.lower()}_vs_{model_name.lower()}_ari.csv"
+    )
+
+    plot_clean_heatmap(
+        results_nmi,
+        f"NMI: {model_name} × {model_name}",
+        f"outputs/window/{model_name.lower()}_vs_{model_name.lower()}_nmi.png",
+        cmap="YlGnBu",
+    )
+    plot_clean_heatmap(
+        results_vi,
+        f"VI: {model_name} × {model_name}",
+        f"outputs/window/{model_name.lower()}_vs_{model_name.lower()}_vi.png",
+        cmap="YlOrBr",
+        vmax=None,
+    )
+    plot_clean_heatmap(
+        results_ari,
+        f"ARI: {model_name} × {model_name}",
+        f"outputs/window/{model_name.lower()}_vs_{model_name.lower()}_ari.png",
+        cmap="PuBuGn",
+    )
+
+    return results_vi, results_nmi, results_ari
+
+
+def compare_all_partitions(df, nlp, window_list):
+    results_vi = pd.DataFrame(index=window_list, columns=window_list)
+    results_nmi = pd.DataFrame(index=window_list, columns=window_list)
+    results_ari = pd.DataFrame(index=window_list, columns=window_list)
+
+    w2v_models = {}
+    sbm_term_labels = {}
+    w2v_term_labels = {}
+
     for w_sbm in window_list:
         print(f"\n### SBM janela = {w_sbm}")
 
@@ -468,38 +640,37 @@ def compare_all_partitions(df, nlp, window_list):
         print("Grafo JAN-TERM:")
         print(g_jan_term)
 
+        g_con_jan_term = extract_context_window_term_graph(g_jan_term)
+        print("Grafo CONT-JAN-TERM")
+        print(g_con_jan_term)
+
         doc_term = extract_doc_term_graph(g_full)
         print("Grafo DOC-TERM:")
         print(doc_term)
 
         # # #  # Impressão dos 3 grafos bases do projeto
-        # draw_base_graphs(g_full,g_jan_term,doc_term, w_sbm)
+        # draw_base_graphs(g_full,g_jan_term,doc_term, g_con_jan_term, w_sbm)
         # exit()
 
         state = minimize_blockmodel_dl(
-            g_jan_term,
-            state=LayeredBlockState,  # modelo adequado a camadas
+            g_con_jan_term,
+            # state=LayeredBlockState,  # modelo adequado a camadas
             state_args=dict(
-                ec=g_jan_term.ep["layer"],  # mapa de camadas/discretas
-                layers=True,  # versão “camadas independentes”
                 eweight=g_jan_term.ep["weight"],  # (opcional) multiplicidade da aresta
                 pclabel=g_jan_term.vp[
                     "tipo"
                 ],  # mantém janelas e termos em grupos separados
             ),
         )
-        # Refinar com MCMC
-        # state.mcmc_sweep(niter=1000)  # Tenta mudar rótulos de vértices localmente
 
-        print("A saída do SBM:")
+        print("State do SBM:")
         print(state)
         # state = state.project_level(0)   # nível mais detalhado, use a função do nested e queira trabalhar como se não fosse nested.
 
         # definição da quantidade de clusters através do números de bocos de termos
-        k_blocks = count_connected_term_blocks(state, g_jan_term)
-        print(f"   blocos SBM (com termos e conexões) = {k_blocks}")
+        k_blocks = count_connected_term_blocks(state, g_con_jan_term)
+        print(f"   \nblocos SBM (com termos e conexões) = {k_blocks}")
 
-        # mapa termo → bloco (preciso para vetores paralelos)
         blocks_vec = state.get_blocks().a
         term_to_block = {
             g_jan_term.vp["name"][v]: int(blocks_vec[int(v)])
@@ -507,23 +678,19 @@ def compare_all_partitions(df, nlp, window_list):
             if int(g_jan_term.vp["tipo"][v]) == 1
         }
 
-        # ------------------------------------------------
-        # 2. loop sobre janela Word2Vec (w_w2v)
-        # ------------------------------------------------
+        sbm_term_labels[w_sbm] = list(term_to_block.values())
+
         for w_w2v in window_list:
             print(f"      → Word2Vec janela = {w_w2v}")
 
-            # treino Word2Vec apenas 1ª vez
             if w_w2v not in w2v_models:
                 w_int = 10000 if w_w2v == "full" else w_w2v
                 w2v_models[w_w2v] = train_word2vec(df, nlp, w_int)
             w2v_model = w2v_models[w_w2v]
 
-            # clonar grafo Doc‑Term para clusterização isolada
             g_dt = doc_term.copy()
             clusters = cluster_terms(g_dt, w2v_model, n_clusters=k_blocks)
 
-            # montar vetores paralelos
             sbm_labels = []
             w2v_labels = []
             for v in g_dt.vertices():
@@ -534,6 +701,9 @@ def compare_all_partitions(df, nlp, window_list):
                     continue
                 sbm_labels.append(term_to_block[term])
                 w2v_labels.append(int(g_dt.vp["cluster"][v]))
+
+            if w_sbm == w_w2v:
+                w2v_term_labels[w_w2v] = w2v_labels
 
             if len(set(w2v_labels)) > 1 and len(set(sbm_labels)) > 1:
                 sbm_arr = np.array(sbm_labels)
@@ -547,7 +717,9 @@ def compare_all_partitions(df, nlp, window_list):
             results_nmi.loc[w_sbm, w_w2v] = nmi
             results_ari.loc[w_sbm, w_w2v] = ari
 
-    # salvar resultados
+    compare_same_model_partitions(sbm_term_labels, window_list, model_name="SBM")
+    compare_same_model_partitions(w2v_term_labels, window_list, model_name="Word2Vec")
+
     results_vi.to_csv("outputs/window/matriz_vi.csv")
     results_nmi.to_csv("outputs/window/matriz_nmi.csv")
     results_ari.to_csv("outputs/window/matriz_ari.csv")
