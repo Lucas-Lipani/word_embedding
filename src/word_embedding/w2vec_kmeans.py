@@ -1,7 +1,8 @@
 from tqdm import tqdm
 from sklearn.cluster import KMeans
 import numpy as np
-from gensim.models import (Word2Vec)
+from gensim.models import Word2Vec
+
 
 def train_word2vec(df, nlp, window):
     """
@@ -43,6 +44,7 @@ def train_word2vec(df, nlp, window):
     )
 
     return model
+
 
 def kmeans_clustering(g, n_clusters, term_vectors):
     kmeans = KMeans(n_clusters=n_clusters, random_state=42)
@@ -95,7 +97,7 @@ def cluster_terms(g, w2v_model, n_clusters):
     if len(term_vectors) == 0:
         print("Nenhum vetor de termo foi encontrado.")
         return {}
-    
-    clusters = kmeans_clustering(g,n_clusters, term_vectors)
+
+    clusters = kmeans_clustering(g, n_clusters, term_vectors)
 
     return clusters

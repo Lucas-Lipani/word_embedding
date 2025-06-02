@@ -3,7 +3,7 @@ from graph_tool.all import (
     # LayeredBlockState,
     graph_draw,
     # sfdp_layout,
-    graph_draw
+    graph_draw,
 )
 
 
@@ -76,4 +76,3 @@ def draw_base_graphs(g, g_doc_jan, g_doc_term, g_con_jan_term, window):
         + window
         + "_graph_c-j-t.pdf",  # Salva a visualização em PDF
     )
-

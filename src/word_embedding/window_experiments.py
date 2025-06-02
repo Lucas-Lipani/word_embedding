@@ -51,13 +51,16 @@ def compare_partitions():
     pass
 
 
-def compare_all_partitions(df, nlp, window_list): # AJUDA PRA NOMEAR ESSA FUNÇÃO PRINCIPAL
+def compare_all_partitions(
+    df, nlp, window_list
+):  # AJUDA PRA NOMEAR ESSA FUNÇÃO PRINCIPAL
     results_vi = pd.DataFrame(index=window_list, columns=window_list)
     results_nmi = pd.DataFrame(index=window_list, columns=window_list)
     results_ari = pd.DataFrame(index=window_list, columns=window_list)
 
     w2v_models = {}
     sbm_term_labels = {}
+    sbm_term_labels_list = {}
     w2v_term_labels = {}
 
     for w_sbm in window_list:
@@ -86,7 +89,7 @@ def compare_all_partitions(df, nlp, window_list): # AJUDA PRA NOMEAR ESSA FUNÇ�
         # exit()
 
         state = graph_sbm.sbm(g_con_jan_term)
-        print("State do SBM:")
+        print("State do SBM do grafo Termo como Contexto - Janela de Contexto - Termo:")
         print(state)
 
         # Definição da quantidade de clusters através do números de bocos de termos
@@ -100,7 +103,12 @@ def compare_all_partitions(df, nlp, window_list): # AJUDA PRA NOMEAR ESSA FUNÇ�
             if int(g_jan_term.vp["tipo"][v]) == 1
         }
 
-        sbm_term_labels[w_sbm] = list(term_to_block.values())
+        sbm_term_labels[w_sbm] = (
+            term_to_block.copy()
+        )  # para a comparação com o SBM antigo
+        sbm_term_labels_list[w_sbm] = list(
+            term_to_block.values()
+        )  # para compare_same_model_partitions
 
         for w_w2v in window_list:
             print(f"      → Word2Vec janela = {w_w2v}")
@@ -130,7 +138,9 @@ def compare_all_partitions(df, nlp, window_list): # AJUDA PRA NOMEAR ESSA FUNÇ�
             if len(set(w2v_labels)) > 1 and len(set(sbm_labels)) > 1:
                 sbm_arr = np.array(sbm_labels)
                 w2v_arr = np.array(w2v_labels)
-                vi, mi, nmi = compare_model.compare_labels_multimetrics(sbm_arr, w2v_arr)
+                vi, mi, nmi = compare_model.compare_labels_multimetrics(
+                    sbm_arr, w2v_arr
+                )
                 ari = adjusted_rand_score(sbm_arr, w2v_arr)
             else:
                 vi = nmi = ari = np.nan
@@ -139,8 +149,13 @@ def compare_all_partitions(df, nlp, window_list): # AJUDA PRA NOMEAR ESSA FUNÇ�
             results_nmi.loc[w_sbm, w_w2v] = nmi
             results_ari.loc[w_sbm, w_w2v] = ari
 
-    compare_model.compare_same_model_partitions(sbm_term_labels, window_list, model_name="SBM")
-    compare_model.compare_same_model_partitions(w2v_term_labels, window_list, model_name="Word2Vec")
+    compare_model.compare_same_model_partitions(
+        sbm_term_labels_list, window_list, model_name="SBM"
+    )
+    compare_model.compare_same_model_partitions(
+        w2v_term_labels, window_list, model_name="Word2Vec"
+    )
+    compare_model.compare_normal_sbm_partitions(doc_term, sbm_term_labels, window_list)
 
     results_vi.to_csv("../../outputs/window/matriz_vi.csv")
     results_nmi.to_csv("../../outputs/window/matriz_nmi.csv")
@@ -153,25 +168,31 @@ def main():
     start = time.time()
 
     nlp = spacy.load("en_core_web_sm")
-    df = pd.read_parquet("../../wos_sts_journals.parquet").sample(n=2, random_state=42)
+    df = pd.read_parquet("../../wos_sts_journals.parquet").sample(n=150, random_state=42)
 
-    WINDOW_LIST = [5, "full"]
+    WINDOW_LIST = [5, 10, 20, 30, 40, 50, "full"]
 
     vi_mat, nmi_mat, ari_mat = compare_all_partitions(df, nlp, WINDOW_LIST)
 
     # plot heatmaps
     plots.plot_clean_heatmap(
-        nmi_mat, "NMI: SBM x Word2Vec", "../../outputs/window/cross_nmi.png", cmap="YlGnBu"
+        nmi_mat,
+        "NMI: SBM x Word2Vec",
+        "../../outputs/window/cross_nmi.png",
+        cmap="YlGnBu",
     )
     plots.plot_clean_heatmap(
         vi_mat,
-        "VI: SBM x Word2Vec", 
+        "VI: SBM x Word2Vec",
         "../../outputs/window/cross_vi.png",
         cmap="YlOrBr",
         vmax=None,
     )
     plots.plot_clean_heatmap(
-        ari_mat, "ARI: SBM x Word2Vec", "../../outputs/window/cross_ari.png", cmap="PuBuGn"
+        ari_mat,
+        "ARI: SBM x Word2Vec",
+        "../../outputs/window/cross_ari.png",
+        cmap="PuBuGn",
     )
 
     print(f"\nTempo total: {time.time() - start:.2f} s")
