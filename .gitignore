@@ -5,3 +5,7 @@
 /outputs
 
 /src/word_embedding/main.py
+
+/__pycache__
+
+/src/word_embedding/__pycache__
