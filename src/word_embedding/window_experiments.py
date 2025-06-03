@@ -168,7 +168,7 @@ def main():
     start = time.time()
 
     nlp = spacy.load("en_core_web_sm")
-    df = pd.read_parquet("../../wos_sts_journals.parquet").sample(n=150, random_state=42)
+    df = pd.read_parquet("../../wos_sts_journals.parquet").sample(n=300, random_state=42)
 
     WINDOW_LIST = [5, 10, 20, 30, 40, 50, "full"]
 
