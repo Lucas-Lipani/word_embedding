@@ -1,9 +1,83 @@
 import pandas as pd
 from pathlib import Path
 import numpy as np
-import plots, graph_sbm, window_experiments
+import plots, graph_sbm, window_experiments, w2vec_kmeans
 from graph_tool.all import variation_information, mutual_information, partition_overlap
 from sklearn.metrics import adjusted_rand_score
+
+
+def compare_partitions(
+    state,
+    g_jan_term,
+    sbm_term_labels,
+    w_sbm,
+    sbm_term_labels_list,
+    w2v_models,
+    window_list,
+    doc_term,
+    df,
+    nlp,
+    k_blocks,
+    w2v_term_labels,
+    results_vi,
+    results_ari,
+    results_nmi,
+):
+
+    # 1. Obtém mapeamento termo → bloco do SBM
+    blocks_vec = state.get_blocks().a
+    term_to_block = {
+        g_jan_term.vp["name"][v]: int(blocks_vec[int(v)])
+        for v in g_jan_term.vertices()
+        if int(g_jan_term.vp["tipo"][v]) == 1
+    }
+
+    # Salva para comparações posteriores
+    sbm_term_labels[w_sbm] = term_to_block.copy()
+    sbm_term_labels_list[w_sbm] = list(term_to_block.values())
+
+    for w_w2v in window_list:
+        print(f"      → Word2Vec janela = {w_w2v}")
+
+        # Reutiliza ou treina modelo Word2Vec
+        if w_w2v not in w2v_models:
+            w_int = 10000 if w_w2v == "full" else int(w_w2v)
+            w2v_models[w_w2v] = w2vec_kmeans.train_word2vec(df, nlp, w_int)
+        w2v_model = w2v_models[w_w2v]
+
+        # Cria cópia do grafo doc-term e clusteriza
+        g_dt = doc_term.copy()
+        _ = w2vec_kmeans.cluster_terms(g_dt, w2v_model, n_clusters=k_blocks)
+
+        # Monta vetores de rótulos
+        sbm_labels = []
+        w2v_labels = []
+
+        for v in g_dt.vertices():
+            if int(g_dt.vp["tipo"][v]) != 1:
+                continue
+            term = g_dt.vp["name"][v]
+            if term not in term_to_block:
+                continue
+            sbm_labels.append(term_to_block[term])
+            w2v_labels.append(int(g_dt.vp["cluster"][v]))
+
+        # Salva rótulos para comparações entre janelas iguais
+        if w_sbm == w_w2v:
+            w2v_term_labels[w_w2v] = w2v_labels
+
+        # Aplica métricas se houver mais de um cluster
+        if len(set(w2v_labels)) > 1 and len(set(sbm_labels)) > 1:
+            sbm_arr = np.array(sbm_labels)
+            w2v_arr = np.array(w2v_labels)
+            vi, mi, nmi = compare_labels_multimetrics(sbm_arr, w2v_arr)
+            ari = adjusted_rand_score(sbm_arr, w2v_arr)
+        else:
+            vi = nmi = ari = np.nan
+
+        results_vi.loc[w_sbm, w_w2v] = vi
+        results_nmi.loc[w_sbm, w_w2v] = nmi
+        results_ari.loc[w_sbm, w_w2v] = ari
 
 
 def compare_same_model_partitions(model_outputs, window_list, model_name):
@@ -72,9 +146,6 @@ def compare_labels_multimetrics(labels_left, labels_right):
     nmi = po[2] if isinstance(po, (tuple, list, np.ndarray)) else po
 
     return vi, mi, nmi
-
-    # print("State do SBM do grafo Documento - Termo:")
-    # print(state_sbm_fixed)
 
 
 def compare_normal_sbm_partitions(doc_term_graph, sbm_term_dicts, window_list):

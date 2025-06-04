@@ -1,11 +1,9 @@
 from pathlib import Path
 import time
 import spacy
-import numpy as np
 import pandas as pd
 import matplotlib
-from sklearn.metrics import adjusted_rand_score
-import graph_build, graph_draw, w2vec_kmeans, graph_sbm, plots, compare_model
+import graph_build, graph_draw, graph_sbm, plots, compare_model
 from collections import defaultdict
 
 
@@ -47,13 +45,7 @@ def count_connected_term_blocks(state, g):
     return len(term_blocks)
 
 
-def compare_partitions():
-    pass
-
-
-def compare_all_partitions(
-    df, nlp, window_list
-):  # AJUDA PRA NOMEAR ESSA FUNÇÃO PRINCIPAL
+def word_embedding(df, nlp, window_list):  # AJUDA PRA NOMEAR ESSA FUNÇÃO PRINCIPAL
     results_vi = pd.DataFrame(index=window_list, columns=window_list)
     results_nmi = pd.DataFrame(index=window_list, columns=window_list)
     results_ari = pd.DataFrame(index=window_list, columns=window_list)
@@ -96,58 +88,23 @@ def compare_all_partitions(
         k_blocks = count_connected_term_blocks(state, g_con_jan_term)
         print(f"   \nblocos SBM (com termos e conexões) = {k_blocks}")
 
-        blocks_vec = state.get_blocks().a
-        term_to_block = {
-            g_jan_term.vp["name"][v]: int(blocks_vec[int(v)])
-            for v in g_jan_term.vertices()
-            if int(g_jan_term.vp["tipo"][v]) == 1
-        }
-
-        sbm_term_labels[w_sbm] = (
-            term_to_block.copy()
-        )  # para a comparação com o SBM antigo
-        sbm_term_labels_list[w_sbm] = list(
-            term_to_block.values()
-        )  # para compare_same_model_partitions
-
-        for w_w2v in window_list:
-            print(f"      → Word2Vec janela = {w_w2v}")
-
-            if w_w2v not in w2v_models:
-                w_int = 10000 if w_w2v == "full" else w_w2v
-                w2v_models[w_w2v] = w2vec_kmeans.train_word2vec(df, nlp, w_int)
-            w2v_model = w2v_models[w_w2v]
-
-            g_dt = doc_term.copy()
-            _ = w2vec_kmeans.cluster_terms(g_dt, w2v_model, n_clusters=k_blocks)
-
-            sbm_labels = []
-            w2v_labels = []
-            for v in g_dt.vertices():
-                if int(g_dt.vp["tipo"][v]) != 1:
-                    continue
-                term = g_dt.vp["name"][v]
-                if term not in term_to_block:
-                    continue
-                sbm_labels.append(term_to_block[term])
-                w2v_labels.append(int(g_dt.vp["cluster"][v]))
-
-            if w_sbm == w_w2v:
-                w2v_term_labels[w_w2v] = w2v_labels
-
-            if len(set(w2v_labels)) > 1 and len(set(sbm_labels)) > 1:
-                sbm_arr = np.array(sbm_labels)
-                w2v_arr = np.array(w2v_labels)
-                vi, mi, nmi = compare_model.compare_labels_multimetrics(
-                    sbm_arr, w2v_arr
-                )
-                ari = adjusted_rand_score(sbm_arr, w2v_arr)
-            else:
-                vi = nmi = ari = np.nan
-
-            results_vi.loc[w_sbm, w_w2v] = vi
-            results_nmi.loc[w_sbm, w_w2v] = nmi
-            results_ari.loc[w_sbm, w_w2v] = ari
+        compare_model.compare_partitions(
+            state,  # SBM result for CONT-JAN-TERM
+            g_jan_term,  # graph JAN-TERM
+            sbm_term_labels,  # dict[str: {term: bloco}]
+            w_sbm,  # window size (SBM)
+            sbm_term_labels_list,  # dict[str: list of SBM labels]
+            w2v_models,  # dict[str: Word2Vec model]
+            window_list,  # lista com todos os tamanhos de janela
+            doc_term,  # grafo DOC-TERM para aplicar W2V
+            df,
+            nlp,  # corpus + spaCy NLP
+            k_blocks,  # número de blocos SBM (usado como número de clusters W2V)
+            w2v_term_labels,  # dict[str: list de labels W2V]
+            results_vi,
+            results_ari,
+            results_nmi,  # DataFrames
+        )
 
     compare_model.compare_same_model_partitions(
         sbm_term_labels_list, window_list, model_name="SBM"
@@ -168,11 +125,13 @@ def main():
     start = time.time()
 
     nlp = spacy.load("en_core_web_sm")
-    df = pd.read_parquet("../../wos_sts_journals.parquet").sample(n=300, random_state=42)
+    df = pd.read_parquet("../../wos_sts_journals.parquet").sample(
+        n=300, random_state=42
+    )
 
     WINDOW_LIST = [5, 10, 20, 30, 40, 50, "full"]
 
-    vi_mat, nmi_mat, ari_mat = compare_all_partitions(df, nlp, WINDOW_LIST)
+    vi_mat, nmi_mat, ari_mat = word_embedding(df, nlp, WINDOW_LIST)
 
     # plot heatmaps
     plots.plot_clean_heatmap(
