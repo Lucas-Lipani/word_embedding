@@ -2,12 +2,12 @@ from pathlib import Path
 import time
 import spacy
 import pandas as pd
-import matplotlib
-import graph_build, graph_draw, graph_sbm, plots, compare_model
+import os
 from collections import defaultdict
 
+from . import graph_build, graph_draw, graph_sbm, plots, compare_model
 
-matplotlib.use("Agg")  # Usa backend para salvar arquivos, sem abrir janelas
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 
 def count_connected_term_blocks(state, g):
@@ -16,7 +16,6 @@ def count_connected_term_blocks(state, g):
     """
     blocks_vec = state.get_blocks().a
 
-    # bloco é considerado ativo se tem vértices com arestas no grafo original
     connected_blocks = set()
     for v in g.vertices():
         if v.out_degree() + v.in_degree() > 0:
@@ -34,7 +33,6 @@ def count_connected_term_blocks(state, g):
             if tipo == 1:
                 term_blocks.add(bloco)
 
-    # print de conferência
     print("\n[Depuração] Blocos conectados por tipo:")
     for tipo, blocos in sorted(blocks_by_type.items()):
         nome = {0: "Documento", 1: "Termo", 3: "Janela", 4: "Contexto"}.get(
@@ -45,22 +43,17 @@ def count_connected_term_blocks(state, g):
     return len(term_blocks)
 
 
-def word_embedding(df, nlp, window_list):  # AJUDA PRA NOMEAR ESSA FUNÇÃO PRINCIPAL
-    results_vi = pd.DataFrame(index=window_list, columns=window_list)
-    results_nmi = pd.DataFrame(index=window_list, columns=window_list)
-    results_ari = pd.DataFrame(index=window_list, columns=window_list)
-
+def word_embedding(df_docs, nlp, window_list):
     w2v_models = {}
     sbm_term_labels = {}
     sbm_term_labels_list = {}
     w2v_term_labels = {}
 
-    for w_sbm in window_list:
-        print(f"\n### SBM janela = {w_sbm}")
+    for sbm_window in window_list:
+        print(f"\n### SBM janela = {sbm_window}")
 
-        # (a) construir grafo completo + SBM em JAN-TERM
         g_full = graph_build.initialize_graph()
-        g_full = graph_build.build_window_graph(g_full, df, nlp, w_sbm)
+        g_full = graph_build.build_window_graph(g_full, df_docs, nlp, sbm_window)
         print("Grafo DOC-JAN-TERM:")
         print(g_full)
 
@@ -76,34 +69,26 @@ def word_embedding(df, nlp, window_list):  # AJUDA PRA NOMEAR ESSA FUNÇÃO PRIN
         print("Grafo DOC-TERM:")
         print(doc_term)
 
-        # # #  # Impressão dos 3 grafos bases do projeto
-        # graph_draw.draw_base_graphs(g_full,g_jan_term,doc_term, g_con_jan_term, w_sbm)
-        # exit()
-
         state = graph_sbm.sbm(g_con_jan_term)
         print("State do SBM do grafo Termo como Contexto - Janela de Contexto - Termo:")
         print(state)
 
-        # Definição da quantidade de clusters através do números de bocos de termos
         k_blocks = count_connected_term_blocks(state, g_con_jan_term)
         print(f"   \nblocos SBM (com termos e conexões) = {k_blocks}")
 
-        compare_model.compare_partitions(
-            state,  # SBM result for CONT-JAN-TERM
-            g_jan_term,  # graph JAN-TERM
-            sbm_term_labels,  # dict[str: {term: bloco}]
-            w_sbm,  # window size (SBM)
-            sbm_term_labels_list,  # dict[str: list of SBM labels]
-            w2v_models,  # dict[str: Word2Vec model]
-            window_list,  # lista com todos os tamanhos de janela
-            doc_term,  # grafo DOC-TERM para aplicar W2V
-            df,
-            nlp,  # corpus + spaCy NLP
-            k_blocks,  # número de blocos SBM (usado como número de clusters W2V)
-            w2v_term_labels,  # dict[str: list de labels W2V]
-            results_vi,
-            results_ari,
-            results_nmi,  # DataFrames
+        results_vi, results_nmi, results_ari = compare_model.compare_partitions(
+            state,
+            g_jan_term,
+            sbm_term_labels,
+            sbm_window,
+            sbm_term_labels_list,
+            w2v_models,
+            window_list,
+            doc_term,
+            df_docs,
+            nlp,
+            k_blocks,
+            w2v_term_labels
         )
 
     compare_model.compare_same_model_partitions(
@@ -114,9 +99,13 @@ def word_embedding(df, nlp, window_list):  # AJUDA PRA NOMEAR ESSA FUNÇÃO PRIN
     )
     compare_model.compare_normal_sbm_partitions(doc_term, sbm_term_labels, window_list)
 
-    results_vi.to_csv("../../outputs/window/matriz_vi.csv")
-    results_nmi.to_csv("../../outputs/window/matriz_nmi.csv")
-    results_ari.to_csv("../../outputs/window/matriz_ari.csv")
+    output_dir = Path(__file__).resolve().parent / "../../outputs/window"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+
+    results_vi.to_csv(output_dir / "matriz_vi.csv")
+    results_nmi.to_csv(output_dir / "matriz_nmi.csv")
+    results_ari.to_csv(output_dir / "matriz_ari.csv")
 
     return results_vi, results_nmi, results_ari
 
@@ -125,32 +114,30 @@ def main():
     start = time.time()
 
     nlp = spacy.load("en_core_web_sm")
-    df = pd.read_parquet("../../wos_sts_journals.parquet").sample(
-        n=300, random_state=42
-    )
+    df_path = os.path.join(BASE_DIR, "../../wos_sts_journals.parquet")
+    df_docs = pd.read_parquet(df_path).sample(n=300, random_state=42)
 
     WINDOW_LIST = [5, 10, 20, 30, 40, 50, "full"]
 
-    vi_mat, nmi_mat, ari_mat = word_embedding(df, nlp, WINDOW_LIST)
+    vi_mat, nmi_mat, ari_mat = word_embedding(df_docs, nlp, WINDOW_LIST)
 
-    # plot heatmaps
     plots.plot_clean_heatmap(
         nmi_mat,
         "NMI: SBM x Word2Vec",
-        "../../outputs/window/cross_nmi.png",
+        os.path.join(BASE_DIR, "../../outputs/window/cross_nmi.png"),
         cmap="YlGnBu",
     )
     plots.plot_clean_heatmap(
         vi_mat,
         "VI: SBM x Word2Vec",
-        "../../outputs/window/cross_vi.png",
+        os.path.join(BASE_DIR, "../../outputs/window/cross_vi.png"),
         cmap="YlOrBr",
         vmax=None,
     )
     plots.plot_clean_heatmap(
         ari_mat,
         "ARI: SBM x Word2Vec",
-        "../../outputs/window/cross_ari.png",
+        os.path.join(BASE_DIR, "../../outputs/window/cross_ari.png"),
         cmap="PuBuGn",
     )
 

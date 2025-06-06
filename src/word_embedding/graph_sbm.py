@@ -2,7 +2,7 @@ from graph_tool.all import minimize_blockmodel_dl, LayeredBlockState
 
 
 def sbm(g, layered=False):
-    if layered == False:
+    if layered is False:
         state = minimize_blockmodel_dl(
             g,
             # state=LayeredBlockState,  # modelo adequado a camadas

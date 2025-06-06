@@ -1,8 +1,8 @@
 from graph_tool.all import Graph
 from tqdm import tqdm
-import graph_build
 from collections import Counter
 
+from . import graph_build
 
 def initialize_graph():
     """

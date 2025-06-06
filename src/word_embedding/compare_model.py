@@ -1,28 +1,35 @@
 import pandas as pd
-from pathlib import Path
 import numpy as np
-import plots, graph_sbm, window_experiments, w2vec_kmeans
+import os
+from pathlib import Path
 from graph_tool.all import variation_information, mutual_information, partition_overlap
 from sklearn.metrics import adjusted_rand_score
+
+from . import plots, graph_sbm, window_experiments, w2vec_kmeans
+
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+OUTPUT_DIR = os.path.abspath(os.path.join(BASE_DIR, "../../outputs/window"))
+Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
 
 
 def compare_partitions(
     state,
     g_jan_term,
     sbm_term_labels,
-    w_sbm,
+    sbm_window,
     sbm_term_labels_list,
     w2v_models,
     window_list,
     doc_term,
-    df,
+    df_docs,
     nlp,
     k_blocks,
-    w2v_term_labels,
-    results_vi,
-    results_ari,
-    results_nmi,
+    w2v_term_labels
 ):
+
+    results_vi = pd.DataFrame(index=window_list, columns=window_list)
+    results_nmi = pd.DataFrame(index=window_list, columns=window_list)
+    results_ari = pd.DataFrame(index=window_list, columns=window_list)
 
     # 1. Obtém mapeamento termo → bloco do SBM
     blocks_vec = state.get_blocks().a
@@ -33,17 +40,15 @@ def compare_partitions(
     }
 
     # Salva para comparações posteriores
-    sbm_term_labels[w_sbm] = term_to_block.copy()
-    sbm_term_labels_list[w_sbm] = list(term_to_block.values())
+    sbm_term_labels[sbm_window] = term_to_block.copy()
+    sbm_term_labels_list[sbm_window] = list(term_to_block.values())
 
     for w_w2v in window_list:
         print(f"      → Word2Vec janela = {w_w2v}")
 
         # Reutiliza ou treina modelo Word2Vec
-        if w_w2v not in w2v_models:
-            w_int = 10000 if w_w2v == "full" else int(w_w2v)
-            w2v_models[w_w2v] = w2vec_kmeans.train_word2vec(df, nlp, w_int)
-        w2v_model = w2v_models[w_w2v]
+        w2v_model = w2vec_kmeans.get_or_train_w2v_model(w2v_models, w_w2v, df_docs, nlp)
+
 
         # Cria cópia do grafo doc-term e clusteriza
         g_dt = doc_term.copy()
@@ -63,7 +68,7 @@ def compare_partitions(
             w2v_labels.append(int(g_dt.vp["cluster"][v]))
 
         # Salva rótulos para comparações entre janelas iguais
-        if w_sbm == w_w2v:
+        if sbm_window == w_w2v:
             w2v_term_labels[w_w2v] = w2v_labels
 
         # Aplica métricas se houver mais de um cluster
@@ -75,9 +80,11 @@ def compare_partitions(
         else:
             vi = nmi = ari = np.nan
 
-        results_vi.loc[w_sbm, w_w2v] = vi
-        results_nmi.loc[w_sbm, w_w2v] = nmi
-        results_ari.loc[w_sbm, w_w2v] = ari
+        results_vi.loc[sbm_window, w_w2v] = vi
+        results_nmi.loc[sbm_window, w_w2v] = nmi
+        results_ari.loc[sbm_window, w_w2v] = ari
+
+        return results_vi, results_nmi, results_ari
 
 
 def compare_same_model_partitions(model_outputs, window_list, model_name):
@@ -87,8 +94,13 @@ def compare_same_model_partitions(model_outputs, window_list, model_name):
 
     for i in window_list:
         for j in window_list:
+            if i not in model_outputs or j not in model_outputs:
+                results_vi.loc[i, j] = results_nmi.loc[i, j] = results_ari.loc[i, j] = np.nan
+                continue
+
             labels_i = model_outputs[i]
             labels_j = model_outputs[j]
+
             if len(labels_i) != len(labels_j):
                 results_vi.loc[i, j] = results_nmi.loc[i, j] = results_ari.loc[i, j] = (
                     np.nan
@@ -102,8 +114,9 @@ def compare_same_model_partitions(model_outputs, window_list, model_name):
             results_nmi.loc[i, j] = nmi
             results_ari.loc[i, j] = ari
 
-    out_dir = Path("../../outputs")
-    window_dir = out_dir / "window"
+    window_dir = Path(__file__).resolve().parent / "../../outputs/window"
+    window_dir.mkdir(parents=True, exist_ok=True)
+
 
     results_vi.to_csv(
         window_dir / f"{model_name.lower()}_vs_{model_name.lower()}_vi.csv"
@@ -195,7 +208,7 @@ def compare_normal_sbm_partitions(doc_term_graph, sbm_term_dicts, window_list):
         ari_df.loc[idx[0], w] = ari
 
     # ── 4. Salvar CSVs + heat-maps ────────────────────────────────
-    out_dir = Path("../../outputs/window")
+    out_dir = Path("../outputs/window")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     vi_df.to_csv(out_dir / "sbm_docterm_vs_windows_vi.csv")

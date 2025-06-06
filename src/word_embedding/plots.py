@@ -1,14 +1,13 @@
-def plot_clean_heatmap(matrix, title, filename, cmap, vmin=0, vmax=1):
-    import seaborn as sns, matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib.pyplot as plt
+import os
 
+def plot_clean_heatmap(matrix, title, filename, cmap, vmin=0, vmax=1):
     matrix_plot = matrix.astype(float).fillna(-1)
 
-    # ── cálculo dinâmico do figsize ─────────────────────
+    # Configurações do gráfico
     rows, cols = matrix_plot.shape
-    cell_h, cell_w = 0.6, 1.0  # em polegadas
-    height = max(1.5, rows * cell_h + 1)
-    width = max(3.0, cols * cell_w + 1)
-    fig, ax = plt.subplots(figsize=(width, height))
+    fig, ax = plt.subplots(figsize=(max(3.0, cols), max(1.5, rows)))
 
     sns.heatmap(
         matrix_plot,
@@ -21,27 +20,19 @@ def plot_clean_heatmap(matrix, title, filename, cmap, vmin=0, vmax=1):
         vmax=vmax,
         ax=ax,
         linewidths=0.5,
-        square=False,  # <-- evita esticar para quadrado
     )
 
-    # substitui “-1.00” por “N/A”
     for text in ax.texts:
         if text.get_text() == "-1.00":
             text.set_text("N/A")
 
     ax.set_title(title)
-    if "×" in title:  # mesmas regras que você já tinha
-        ax.set_xlabel("Tamanho da Janela")
-        ax.set_ylabel(
-            "Tamanho da Janela"
-            if "×" not in title
-            else "Tamanho da Janela\nSBM DOC-TERM"
-        )
-    else:
-        ax.set_xlabel("Tamanho da Janela")
-        ax.set_ylabel("Tamanho da Janela")
+    ax.set_xlabel("Tamanho da Janela")
+    ax.set_ylabel("Tamanho da Janela")
 
     plt.tight_layout()
     plt.gca().invert_yaxis()
+
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
     plt.savefig(filename)
     plt.close()

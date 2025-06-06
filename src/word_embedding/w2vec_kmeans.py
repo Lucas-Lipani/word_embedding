@@ -46,6 +46,18 @@ def train_word2vec(df, nlp, window):
     return model
 
 
+def get_or_train_w2v_model(w2v_models, window_size, df_docs, nlp):
+    """
+    Retorna modelo Word2Vec treinado para a janela fornecida.
+    Se já existir no dicionário, reutiliza.
+    """
+    if window_size not in w2v_models:
+        w_int = 10000 if window_size == "full" else int(window_size)
+        model = train_word2vec(df_docs, nlp, w_int)
+        w2v_models[window_size] = model
+    return w2v_models[window_size]
+
+
 def kmeans_clustering(g, n_clusters, term_vectors):
     kmeans = KMeans(n_clusters=n_clusters, random_state=42)
     labels = kmeans.fit_predict(term_vectors)
