@@ -50,12 +50,19 @@ Additional measures:
 
 ---
 
-## How to Run
+
+## Run Instructions
+
+To run the experiment pipeline properly:
+
+1. **Ensure you are in the `src/` directory.**
+2. **Use Python’s module execution:**
 
 ```bash
-python3 window_experiments.py
-```
+cd src
+python3 -m word_embedding
 
+```
 Results are saved under `outputs/window/`.
 
 ---
