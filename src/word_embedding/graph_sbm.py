@@ -8,7 +8,9 @@ def sbm(g, layered=False):
             # state=LayeredBlockState,  # modelo adequado a camadas
             state_args=dict(
                 eweight=g.ep["weight"],  # (opcional) multiplicidade da aresta
-                pclabel=g.vp["tipo"],  # mantém janelas e termos em grupos separados
+                pclabel=g.vp[
+                    "tipo"
+                ],  # mantém janelas e termos em grupos separados
             ),
         )
     else:

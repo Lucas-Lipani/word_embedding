@@ -17,7 +17,9 @@ def train_word2vec(df, nlp, window):
     :return: Um modelo Word2Vec treinado com os tokens extraídos dos abstracts.
     """
     sentences = []
-    for abstract in tqdm(df["abstract"], desc="Pré-processamento para Word2Vec"):
+    for abstract in tqdm(
+        df["abstract"], desc="Pré-processamento para Word2Vec"
+    ):
         doc = nlp(abstract)
         tokens = [
             token.text.lower().strip()

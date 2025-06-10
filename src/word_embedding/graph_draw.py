@@ -5,11 +5,14 @@ from graph_tool.all import (
 )
 import os
 
+
 def draw_base_graphs(g, g_doc_jan, g_doc_term, g_con_jan_term, window):
     window = str(window)
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../outputs/window"))
+    base_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../../outputs/window")
+    )
     os.makedirs(base_dir, exist_ok=True)
-    
+
     graph_draw(
         g,
         pos=g.vp["posicao"],

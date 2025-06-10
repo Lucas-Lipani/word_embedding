@@ -2,7 +2,11 @@ import pandas as pd
 import numpy as np
 import os
 from pathlib import Path
-from graph_tool.all import variation_information, mutual_information, partition_overlap
+from graph_tool.all import (
+    variation_information,
+    mutual_information,
+    partition_overlap,
+)
 from sklearn.metrics import adjusted_rand_score
 
 from . import plots, graph_sbm, window_experiments, w2vec_kmeans
@@ -21,10 +25,8 @@ def compare_partitions(
     w2v_models,
     window_list,
     doc_term,
-    df_docs,
-    nlp,
     k_blocks,
-    w2v_term_labels
+    w2v_term_labels,
 ):
 
     results_vi = pd.DataFrame(index=window_list, columns=window_list)
@@ -46,9 +48,7 @@ def compare_partitions(
     for w_w2v in window_list:
         print(f"      → Word2Vec janela = {w_w2v}")
 
-        # Reutiliza ou treina modelo Word2Vec
-        w2v_model = w2vec_kmeans.get_or_train_w2v_model(w2v_models, w_w2v, df_docs, nlp)
-
+        w2v_model = w2v_models[w_w2v]
 
         # Cria cópia do grafo doc-term e clusteriza
         g_dt = doc_term.copy()
@@ -95,16 +95,18 @@ def compare_same_model_partitions(model_outputs, window_list, model_name):
     for i in window_list:
         for j in window_list:
             if i not in model_outputs or j not in model_outputs:
-                results_vi.loc[i, j] = results_nmi.loc[i, j] = results_ari.loc[i, j] = np.nan
+                results_vi.loc[i, j] = results_nmi.loc[i, j] = results_ari.loc[
+                    i, j
+                ] = np.nan
                 continue
 
             labels_i = model_outputs[i]
             labels_j = model_outputs[j]
 
             if len(labels_i) != len(labels_j):
-                results_vi.loc[i, j] = results_nmi.loc[i, j] = results_ari.loc[i, j] = (
-                    np.nan
-                )
+                results_vi.loc[i, j] = results_nmi.loc[i, j] = results_ari.loc[
+                    i, j
+                ] = np.nan
                 continue
             vi, mi, nmi = compare_labels_multimetrics(
                 np.array(labels_i), np.array(labels_j)
@@ -116,7 +118,6 @@ def compare_same_model_partitions(model_outputs, window_list, model_name):
 
     window_dir = Path(__file__).resolve().parent / "../../outputs/window"
     window_dir.mkdir(parents=True, exist_ok=True)
-
 
     results_vi.to_csv(
         window_dir / f"{model_name.lower()}_vs_{model_name.lower()}_vi.csv"
@@ -132,20 +133,20 @@ def compare_same_model_partitions(model_outputs, window_list, model_name):
         results_nmi,
         f"NMI: {model_name} × {model_name}",
         window_dir / f"{model_name.lower()}_vs_{model_name.lower()}_nmi.png",
-        cmap="YlGnBu",
+        cmap="bgy",
     )
     plots.plot_clean_heatmap(
         results_vi,
         f"VI: {model_name} × {model_name}",
         window_dir / f"{model_name.lower()}_vs_{model_name.lower()}_vi.png",
-        cmap="YlOrBr",
+        cmap="fire",
         vmax=None,
     )
     plots.plot_clean_heatmap(
         results_ari,
         f"ARI: {model_name} × {model_name}",
         window_dir / f"{model_name.lower()}_vs_{model_name.lower()}_ari.png",
-        cmap="PuBuGn",
+        cmap="bgy",
     )
 
     return results_vi, results_nmi, results_ari
@@ -180,7 +181,9 @@ def compare_normal_sbm_partitions(doc_term_graph, sbm_term_dicts, window_list):
         if int(doc_term_graph.vp["tipo"][v]) == 1
     }
 
-    _ = window_experiments.count_connected_term_blocks(state_fixed, doc_term_graph)
+    _ = window_experiments.count_connected_term_blocks(
+        state_fixed, doc_term_graph
+    )
 
     # ── 2. Matrizes de resultado: linha única “SBM-DOC-TERM” ─────
     idx = ["SBM-DOC-TERM"]
@@ -197,7 +200,9 @@ def compare_normal_sbm_partitions(doc_term_graph, sbm_term_dicts, window_list):
         if len(common_terms) < 2:
             vi = nmi = ari = np.nan
         else:
-            fixed_labels = np.array([term_to_block_fixed[t] for t in common_terms])
+            fixed_labels = np.array(
+                [term_to_block_fixed[t] for t in common_terms]
+            )
             win_labels = np.array([term_to_block_win[t] for t in common_terms])
 
             vi, _, nmi = compare_labels_multimetrics(fixed_labels, win_labels)
@@ -219,20 +224,20 @@ def compare_normal_sbm_partitions(doc_term_graph, sbm_term_dicts, window_list):
         vi_df,
         "VI: SBM DOC-TERM × SBM-Janela",
         out_dir / "sbm_docterm_vs_windows_vi.png",
-        cmap="YlOrBr",
+        cmap="fire",
         vmax=None,
     )
     plots.plot_clean_heatmap(
         nmi_df,
         "NMI: SBM DOC-TERM × SBM-Janela",
         out_dir / "sbm_docterm_vs_windows_nmi.png",
-        cmap="YlGnBu",
+        cmap="bgy",
     )
     plots.plot_clean_heatmap(
         ari_df,
         "ARI: SBM DOC-TERM × SBM-Janela",
         out_dir / "sbm_docterm_vs_windows_ari.png",
-        cmap="PuBuGn",
+        cmap="bgy",
     )
 
     return vi_df, nmi_df, ari_df

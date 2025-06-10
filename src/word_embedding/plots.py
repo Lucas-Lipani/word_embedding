@@ -1,6 +1,8 @@
 import seaborn as sns
 import matplotlib.pyplot as plt
+import colorcet as cc
 import os
+
 
 def plot_clean_heatmap(matrix, title, filename, cmap, vmin=0, vmax=1):
     matrix_plot = matrix.astype(float).fillna(-1)
@@ -13,7 +15,11 @@ def plot_clean_heatmap(matrix, title, filename, cmap, vmin=0, vmax=1):
         matrix_plot,
         annot=True,
         fmt=".2f",
-        cmap=cmap,
+        cmap=(
+            getattr(cc.cm, cmap)
+            if isinstance(cmap, str) and hasattr(cc.cm, cmap)
+            else cmap
+        ),
         cbar=True,
         cbar_kws={"shrink": 0.7},
         vmin=vmin,
