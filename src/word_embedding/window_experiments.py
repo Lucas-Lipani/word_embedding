@@ -133,9 +133,9 @@ def main():
 
     nlp = spacy.load("en_core_web_sm")
     df_path = os.path.join(BASE_DIR, "../../wos_sts_journals.parquet")
-    df_docs = pd.read_parquet(df_path).sample(n=3, random_state=42)
+    df_docs = pd.read_parquet(df_path).sample(n=300, random_state=42)
 
-    WINDOW_LIST = [5, 10, 50, "full"]
+    WINDOW_LIST = [5, 10, 20, 30, 40, 50, "full"]
 
     vi_mat, nmi_mat, ari_mat = word_embedding(df_docs, nlp, WINDOW_LIST)
 

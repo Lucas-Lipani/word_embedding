@@ -84,7 +84,7 @@ def compare_partitions(
         results_nmi.loc[sbm_window, w_w2v] = nmi
         results_ari.loc[sbm_window, w_w2v] = ari
 
-        return results_vi, results_nmi, results_ari
+    return results_vi, results_nmi, results_ari
 
 
 def compare_same_model_partitions(model_outputs, window_list, model_name):
