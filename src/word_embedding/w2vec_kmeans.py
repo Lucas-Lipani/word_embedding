@@ -4,6 +4,7 @@ import numpy as np
 from gensim.models import Word2Vec
 
 
+
 def train_word2vec(df, nlp, window):
     """
     Processa os abstracts do corpus e treina um modelo Word2Vec usando os tokens
@@ -16,9 +17,13 @@ def train_word2vec(df, nlp, window):
     :param window: Tamanho da janela de conteto para o treinamento do modelo.
     :return: Um modelo Word2Vec treinado com os tokens extraídos dos abstracts.
     """
+    
+    print(f"\nIniciando treinamento do modelo Word2Vec com janela de contexto = {window}")
+    print(f"Tokenizando e limpando {len(df)} abstracts...")
+
     sentences = []
     for abstract in tqdm(
-        df["abstract"], desc="Pré-processamento para Word2Vec"
+        df["abstract"], desc="Pré-processando textos"
     ):
         doc = nlp(abstract)
         tokens = [
@@ -28,25 +33,21 @@ def train_word2vec(df, nlp, window):
         ]
         sentences.append(tokens)
 
+    print("Tokenização concluída. Iniciando o treinamento do modelo Word2Vec...")
+
     model = Word2Vec(
-        # Lista de abstracts tokenizados usados para treinar o modelo
         sentences,
-        # Tamanho do vetor de representação para cada palavra (100 dimensões)
         vector_size=100,
-        # Número de palavras antes e depois da palavra-alvo consideradas no contexto
-        # (janela de contexto)
         window=window,
-        # Ignora palavras que aparecem menos de 2 vezes no corpus
         min_count=1,
-        # 1 para skip-gram ou 0 (default) para CBOW. CBOW: contexto ➜ palavra
-        # | Skip‑gram: palavra ➜ contexto
         sg=1,
-        workers=4,  # Número de threads utilizadas para acelerar o treinamento
+        workers=4,
         epochs=15,
     )
 
-    return model
+    print(f"Treinamento concluído para janela de contexto = {window}.")
 
+    return model
 
 def get_or_train_w2v_model(w2v_models, window_size, df_docs, nlp):
     """
