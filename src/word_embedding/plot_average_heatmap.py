@@ -1,10 +1,39 @@
+# plot_average_robust.py
+
 from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import colorcet as cc
 
-def plot_mean_heatmap(folder, metric="nmi", cmap="bgy", save=False):
+def regenerate_mean_if_needed(folder):
+    dir_path = Path(folder)
+    mean_file = dir_path / "running_mean.parquet"
+    if mean_file.exists():
+        try:
+            df = pd.read_parquet(mean_file)
+            if df[["vi", "nmi", "ari"]].dropna().empty:
+                raise ValueError("Arquivo existente, mas vazio ou inválido.")
+            return True
+        except Exception as e:
+            print(f"[⚠] Problema ao ler média existente: {e}")
+    
+    print(f"🔄 Regenerando média para: {folder}")
+    files = sorted(dir_path.glob("metrics_run*.parquet"))
+    if not files:
+        print(f"[⚠] Nenhum metrics_run*.parquet encontrado em {folder}")
+        return False
+    try:
+        all_dfs = [pd.read_parquet(p).set_index(["sbm_window", "w2v_window"]) for p in files]
+        mean_df = sum(all_dfs) / len(all_dfs)
+        mean_df.reset_index().to_parquet(mean_file, engine="pyarrow")
+        print(f"[✔] Média salva: {mean_file}")
+        return True
+    except Exception as e:
+        print(f"[❌] Erro ao calcular média: {e}")
+        return False
+
+def plot_mean_heatmap(folder, metric="nmi", cmap="bgy", save=True):
     file = Path(folder) / "running_mean.parquet"
     if not file.exists():
         print(f"[⚠] Arquivo não encontrado: {file}")
@@ -21,6 +50,10 @@ def plot_mean_heatmap(folder, metric="nmi", cmap="bgy", save=False):
 
     pivot = df_filtered.pivot(index="sbm_window", columns="w2v_window", values=metric)
     pivot = pivot.sort_index().sort_index(axis=1)
+
+    if pivot.empty:
+        print(f"[⚠] Nenhum dado válido para {metric.upper()} em {folder}")
+        return
 
     plt.figure(figsize=(len(pivot.columns) + 1, len(pivot.index) + 1))
     sns.heatmap(
@@ -44,7 +77,8 @@ def plot_mean_heatmap(folder, metric="nmi", cmap="bgy", save=False):
         plt.show()
 
 if __name__ == "__main__":
-    base_path = Path("outputs/window")
+    base_path = Path("../outputs/window")
     for folder in sorted(base_path.glob("*s_*w")):
-        for metric in ["nmi", "vi", "ari"]:
-            plot_mean_heatmap(folder, metric=metric, cmap="bgy", save=True)
+        if regenerate_mean_if_needed(folder):
+            for metric in ["nmi", "vi", "ari"]:
+                plot_mean_heatmap(folder, metric=metric, cmap="bgy", save=True)
