@@ -2,6 +2,7 @@ from pathlib import Path
 import time
 import spacy
 import pandas as pd
+import argparse
 import os
 from collections import defaultdict
 
@@ -9,6 +10,7 @@ from . import (
     graph_build,
     graph_draw,
     graph_sbm,
+    results_io,
     plots,
     compare_model,
     w2vec_kmeans,
@@ -130,43 +132,79 @@ def word_embedding(df_docs, nlp, window_list):
         cmap="bgy",
     )
 
-    return all_vi, all_nmi, all_ari
+    return (all_vi, all_nmi, all_ari,
+    sbm_term_labels, # {window: {term: block}}
+    w2v_term_labels) # {window: list(labels)}
 
 
 
 def main():
-    start = time.time()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--runs", type=int, default=10, help="Nº de repetições")
+    parser.add_argument("--samples", type=int, default=500)
+    args = parser.parse_args()
+
+    n_runs = args.runs
+    n_samples = args.samples
+
+    WINDOW_LIST = [5, 7, 10, 15, 20, 30, 40, 50, "full"]
+    OUT_BASE   = Path(__file__).resolve().parent / "../../outputs/window"
 
     nlp = spacy.load("en_core_web_sm")
-    df_path = os.path.join(BASE_DIR, "../../wos_sts_journals.parquet")
-    df_docs = pd.read_parquet(df_path).sample(n=300, random_state=42)
+    df_full = pd.read_parquet("../wos_sts_journals.parquet")
 
-    WINDOW_LIST = [5, 10, 20, 30, 40, 50, "full"]
+    for r in range(n_runs):
+        print(f"\n=== Execução {r+1}/{n_runs} ===")
+        df_docs = df_full.sample(n=n_samples, random_state=int(time.time()) % 2**32)
 
-    vi_mat, nmi_mat, ari_mat = word_embedding(df_docs, nlp, WINDOW_LIST)
+        # ----------------- seu pipeline normal -----------------
+        vi_mat, nmi_mat, ari_mat, sbm_term_labels, w2v_term_labels = word_embedding(df_docs, nlp, WINDOW_LIST)
 
-    plots.plot_clean_heatmap(
-        nmi_mat,
-        "NMI: SBM x Word2Vec",
-        os.path.join(BASE_DIR, "../../outputs/window/cross_nmi.png"),
-        cmap="bgy",
-    )
-    plots.plot_clean_heatmap(
-        vi_mat,
-        "VI: SBM x Word2Vec",
-        os.path.join(BASE_DIR, "../../outputs/window/cross_vi.png"),
-        cmap="fire",
-        vmax=None,
-    )
-    plots.plot_clean_heatmap(
-        ari_mat,
-        "ARI: SBM x Word2Vec",
-        os.path.join(BASE_DIR, "../../outputs/window/cross_ari.png"),
-        cmap="bgy",
-    )
+        # --------------- empilha tudo em long format -----------
+        metrics_long = (
+            vi_mat.stack()
+                .rename("vi")
+                .to_frame()
+                .join(nmi_mat.stack().rename("nmi"))
+                .join(ari_mat.stack().rename("ari"))
+                .reset_index(names=["sbm_window", "w2v_window"])
+        )
 
-    print(f"\nTempo total: {time.time() - start:.2f} s")
 
+        # partições: seu código já contém  sbm_term_labels_list  e  w2v_term_labels
+        # faça algo no estilo:
+        partitions_rows = []
+
+        # --- SBM labels ---
+        for w, term_map in sbm_term_labels.items():
+            for term, label in term_map.items():
+                partitions_rows.append({
+                    "window": w, "model": "sbm", "term": term, "label": label
+                })
+
+        # --- Word2Vec labels ---
+        for w, labels in w2v_term_labels.items():
+            terms = list(sbm_term_labels[w].keys())  # mesma ordem dos rótulos w2v
+            for term, label in zip(terms, labels):
+                partitions_rows.append({
+                    "window": w, "model": "w2v", "term": term, "label": label
+                })
+
+        partitions_df = pd.DataFrame(partitions_rows)
+
+        # -------------------------------------------------------
+        partitions_df["window"] = partitions_df["window"].astype(str)
+
+        metrics_long["sbm_window"] = metrics_long["sbm_window"].astype(str)
+        metrics_long["w2v_window"] = metrics_long["w2v_window"].astype(str)
+
+        run_idx, m_file, p_file = results_io.save_run(OUT_BASE, n_samples,
+                                           WINDOW_LIST, metrics_long,
+                                           partitions_df)
+
+        print(f">>> Resultados salvos (execução #{run_idx:03d})\n"
+              f"    métricas   → {m_file.relative_to(Path.cwd())}\n"
+              f"    partições  → {p_file.relative_to(Path.cwd())}")
 
 if __name__ == "__main__":
     main()
