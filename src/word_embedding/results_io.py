@@ -19,6 +19,33 @@ def _next_run_idx(out_dir):
             idxs.append(int(m.group(1)))
     return (max(idxs) + 1) if idxs else 1
 
+
+def save_partitions_only(base_dir, n_samples, seed, model_name, window, partitions_df):
+    """
+    Salva apenas os dados de partição em um arquivo Parquet com estrutura hierárquica:
+    n_samples/seed/model_window/partitions_runXXX.parquet
+    """
+    out_dir = (
+        Path(base_dir)
+        / str(n_samples)
+        / f"seed_{seed}"
+        / f"{model_name}_J{window}"
+    )
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Gerar índice da execução
+    existing = list(out_dir.glob("partitions_run*.parquet"))
+    run_idx = (
+        max([int(p.stem.split("run")[1]) for p in existing], default=0) + 1
+        if existing else 1
+    )
+
+    fname = out_dir / f"partitions_run{run_idx:03d}.parquet"
+    partitions_df.to_parquet(fname, engine="pyarrow")
+
+    return run_idx, fname
+
+
 def save_run(out_base, n_samples, windows, metrics_df, partitions_df):
     """
     Salva Parquets usando modo 'x'. Se já existirem, falha (evita sobrescrever).

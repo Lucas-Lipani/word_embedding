@@ -3,20 +3,18 @@ import time
 import spacy
 import pandas as pd
 import argparse
-import os
 from collections import defaultdict
 
 from . import (
     graph_build,
-    graph_draw,
     graph_sbm,
+    graph_draw,
     results_io,
-    plots,
-    compare_model,
     w2vec_kmeans,
 )
 
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+BASE_DIR = Path(__file__).resolve().parent
+
 
 def count_connected_term_blocks(state, g):
     blocks_vec = state.get_blocks().a
@@ -39,25 +37,20 @@ def count_connected_term_blocks(state, g):
 
     print("\n[Depuração] Blocos conectados por tipo:")
     for tipo, blocos in sorted(blocks_by_type.items()):
-        nome = {0: "Documento", 1: "Termo", 3: "Janela", 4: "Contexto"}.get(
-            tipo, f"Tipo {tipo}"
-        )
+        nome = {0: "Documento", 1: "Termo", 3: "Janela", 4: "Contexto"}.get(tipo, f"Tipo {tipo}")
         print(f"  - {nome:<10}: {len(blocos)} blocos")
 
     return len(term_blocks)
+
 
 def word_embedding(df_docs, nlp, window_list):
     w2v_models = {
         w: w2vec_kmeans.get_or_train_w2v_model({}, w, df_docs, nlp)
         for w in window_list
     }
-    sbm_term_labels = {}
-    sbm_term_labels_list = {}
-    w2v_term_labels = {}
 
-    all_vi = pd.DataFrame(index=window_list, columns=window_list)
-    all_nmi = pd.DataFrame(index=window_list, columns=window_list)
-    all_ari = pd.DataFrame(index=window_list, columns=window_list)
+    sbm_term_labels = {}
+    w2v_term_labels = {}
 
     for sbm_window in window_list:
         print(f"\n### SBM janela = {sbm_window}")
@@ -71,54 +64,55 @@ def word_embedding(df_docs, nlp, window_list):
         state = graph_sbm.sbm(g_con_jan_term)
         k_blocks = count_connected_term_blocks(state, g_con_jan_term)
 
-        results_vi, results_nmi, results_ari = compare_model.compare_partitions(
-            state,
-            g_jan_term,
-            sbm_term_labels,
-            sbm_window,
-            sbm_term_labels_list,
-            w2v_models,
-            window_list,
-            doc_term,
-            k_blocks,
-            w2v_term_labels,
-        )
+        # SBM labels
+        blocks_vec = state.get_blocks().a
+        term_to_block = {
+            g_jan_term.vp["name"][v]: int(blocks_vec[int(v)])
+            for v in g_jan_term.vertices()
+            if int(g_jan_term.vp["tipo"][v]) == 1
+        }
+        sbm_term_labels[sbm_window] = term_to_block.copy()
 
-        all_vi.loc[sbm_window] = results_vi.loc[sbm_window]
-        all_nmi.loc[sbm_window] = results_nmi.loc[sbm_window]
-        all_ari.loc[sbm_window] = results_ari.loc[sbm_window]
+        # W2V clustering
+        g_dt = doc_term.copy()
+        _ = w2vec_kmeans.cluster_terms(g_dt, w2v_models[sbm_window], n_clusters=k_blocks)
 
-    return (all_vi, all_nmi, all_ari, sbm_term_labels, w2v_term_labels)
+        w2v_labels = {}
+        for v in g_dt.vertices():
+            if int(g_dt.vp["tipo"][v]) != 1:
+                continue
+            term = g_dt.vp["name"][v]
+            label = int(g_dt.vp["cluster"][v])
+            w2v_labels[term] = label
+        w2v_term_labels[sbm_window] = list(w2v_labels.values())
+
+    return sbm_term_labels, w2v_term_labels
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs", type=int, default=10, help="Nº de repetições")
     parser.add_argument("--samples", type=int, default=500)
+    parser.add_argument("--seed", type=int, default=None, help="Seed fixa (usada para todas as runs)")
     args = parser.parse_args()
 
     n_runs = args.runs
     n_samples = args.samples
+    fixed_seed = args.seed if args.seed is not None else int(time.time()) % 2**32
 
-    WINDOW_LIST = [5, 7, 10, 15, 20, 30,  40, 50, "full"]
-    OUT_BASE = Path(__file__).resolve().parent / "../../outputs/window"
+    WINDOW_LIST = [5, 10, 20, 40, "full"]
+    OUT_PARTITIONS = BASE_DIR / "../../outputs/partitions"
 
     nlp = spacy.load("en_core_web_sm")
     df_full = pd.read_parquet("../wos_sts_journals.parquet")
 
+    df_docs = df_full.sample(n=n_samples, random_state=fixed_seed)
+
     for r in range(n_runs):
         print(f"\n=== Execução {r+1}/{n_runs} ===")
-        df_docs = df_full.sample(n=n_samples, random_state=int(time.time()) % 2**32)
+        print(f"[ℹ] Seed usada (fixa): {fixed_seed}")
 
-        vi_mat, nmi_mat, ari_mat, sbm_term_labels, w2v_term_labels = word_embedding(df_docs, nlp, WINDOW_LIST)
-
-        metrics_long = (
-            vi_mat.stack()
-                .rename("vi")
-                .to_frame()
-                .join(nmi_mat.stack().rename("nmi"))
-                .join(ari_mat.stack().rename("ari"))
-                .reset_index(names=["sbm_window", "w2v_window"])
-        )
+        sbm_term_labels, w2v_term_labels = word_embedding(df_docs, nlp, WINDOW_LIST)
 
         partitions_rows = []
         for w, term_map in sbm_term_labels.items():
@@ -136,20 +130,25 @@ def main():
 
         partitions_df = pd.DataFrame(partitions_rows)
         partitions_df["window"] = partitions_df["window"].astype(str)
-        metrics_long["sbm_window"] = metrics_long["sbm_window"].astype(str)
-        metrics_long["w2v_window"] = metrics_long["w2v_window"].astype(str)
 
-        run_idx, m_file, p_file = results_io.save_run(
-            OUT_BASE,
-            n_samples,
-            WINDOW_LIST,
-            metrics_long,
-            partitions_df
-        )
+        # Salvar partições separadas por modelo e janela
+        for model in ["sbm", "w2v"]:
+            for window in WINDOW_LIST:
+                df_model = partitions_df[
+                    (partitions_df["model"] == model) &
+                    (partitions_df["window"] == str(window))
+                ]
+                if not df_model.empty:
+                    idx, file = results_io.save_partitions_only(
+                        base_dir=OUT_PARTITIONS,
+                        n_samples=n_samples,
+                        seed=fixed_seed,
+                        model_name=model,
+                        window=window,
+                        partitions_df=df_model
+                    )
+                    print(f"[✔] {model.upper()}_J{window} run {idx:03d} salvo em {file.relative_to(Path.cwd())}")
 
-        print(f">>> Resultados salvos (execução #{run_idx:03d})\n"
-              f"    métricas   → {m_file.relative_to(Path.cwd())}\n"
-              f"    partições  → {p_file.relative_to(Path.cwd())}")
 
 if __name__ == "__main__":
     main()

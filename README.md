@@ -10,18 +10,36 @@ The project is part of the **Cortext** platform (LISIS, CNRS, INRAE, UGE), which
 
 ## Current Pipeline
 
-The code implements a **cross-window experimental pipeline**:
+The code now implements a **modular, multi-run experimental pipeline** with improved seed control, averaging, and visualization:
 
-### `window_experiments.py` — Cross-window comparison
+### `window_experiments.py` — Partition generation
 
-* Builds **Document–Window–Term graphs** for multiple window sizes.
-* Extracts relevant subgraphs: Window–Term, Document–Term, Context–Window–Term.
-* Applies SBM over the **Context–Window–Term** graph to get term blocks.
-* Uses the number of SBM blocks as `k` for **KMeans**.
-* Compares **SBM × Word2Vec partitions** for all combinations of window sizes:
+* Selects a fixed number of documents from the corpus (`--samples`) using a user-defined `--seed`.
+* For each run:
+  * Builds **Document–Window–Term** graphs for multiple window sizes.
+  * Applies SBM to the **Context–Window–Term** graph to extract term blocks.
+  * Uses the number of SBM blocks to guide **KMeans** clustering on Word2Vec embeddings.
+  * Saves **partition files** (`partitions_runXXX.parquet`) under `outputs/partitions/{samples}/seed_{seed}/model_J{window}/`.
 
-  * Outputs **VI**, **NMI**, **ARI** matrices.
-  * Plots **heatmaps** for visual inspection.
+### `compute_partition_metrics.py` — Metric computation
+
+* Reconstructs all partition runs from saved files (grouped by seed).
+* Compares:
+  * **SBM × W2V**
+  * **SBM × SBM**
+  * **W2V × W2V**
+* Computes **VI**, **NMI**, and **ARI** for each pair of windows and saves:
+  * One `metrics_runXXX.parquet` per run
+  * One aggregated `running_mean.parquet` per seed with full cross-window results
+
+### `plot_average_heatmap.py` — Visualization
+
+* Parses `running_mean.parquet`
+* Generates heatmaps for each comparison type and metric:
+  * `mean_nmi_sbm_w2v.png`
+  * `mean_ari_sbm_sbm.png`
+  * `mean_vi_w2v_w2v.png`
+* Each heatmap shows **window × window** comparisons for the chosen metric
 
 ---
 
@@ -43,43 +61,47 @@ The project aims to **compare and contrast** these methods to uncover divergence
 * **NMI (Normalized Mutual Information)** – normalized similarity (higher = better)
 * **ARI (Adjusted Rand Index)** – statistical concordance between partitions
 
-Additional measures:
-
-* **Semantic cohesion** – average pairwise similarity within Word2Vec clusters
-* **Cluster purity** – proportion of cluster terms belonging to the dominant SBM block
+All metrics are computed across all runs and averaged per window pair.
 
 ---
 
-
 ## Run Instructions
 
-To run the experiment pipeline properly:
+To execute a full experimental pipeline for a fixed sample:
 
-1. **Ensure you are in the `src/` directory.**
-2. **Use Python’s module execution:**
+1. From the root directory (`Word_Embedding/`), run:
 
 ```bash
-cd src
-python3 -m word_embedding
-
+python3 -m word_embedding.window_experiments --samples 5 --runs 5 --seed 12345
 ```
-Results are saved under `outputs/window/`.
+
+2. Compute metrics across all executions:
+
+```bash
+python3 word_embedding/compute_partition_metrics.py
+```
+
+3. Generate heatmaps:
+
+```bash
+python3 word_embedding/plot_average_heatmap.py
+```
+
+Each step is fully reproducible via the provided `--seed`.
 
 ---
 
 ## Results Summary
 
-The experiments were conducted using a **subset of 300 documents** extracted from a corpus of over 20,000 entries. This reduced sample limits granularity and statistical representativeness but provides a clear proof of concept.
+The experiments were conducted using controlled samples with fixed seeds for reproducibility.
 
 Key takeaways include:
 
-* **Self-consistency across models**: NMI comparisons within SBM (SBM × SBM) and within Word2Vec (W2V × W2V) showed stable patterns across most window sizes, suggesting robustness in partitioning methods despite data sparsity.
+* **Robustness within methods**: Comparisons such as SBM × SBM and W2V × W2V across different window sizes show consistent patterns, highlighting the internal coherence of each modeling approach.
 
-* **Cross-method comparison**: When comparing SBM and Word2Vec partitions using identical or varying window sizes, the results revealed both alignment and divergence zones. Notably, specific combinations such as SBM window = 5 and Word2Vec window = 20 showed promising NMI and low VI values, indicating potential convergence in how structure and semantics organize terms.
+* **Semantic–structural alignment**: Cross-model comparisons (SBM × W2V) reveal cases of strong agreement (high NMI, low VI), suggesting convergence between semantic and topological partitioning in specific contexts.
 
-* **SBM vs SBM-DOC-TERM**: Direct comparisons between context-sensitive SBM blocks and a baseline SBM over the DOC–TERM graph showed moderate alignment, supporting the idea that local context windows introduce meaningful variation in structural partitioning.
-
-Overall, these results illustrate that even with a limited sample size, the methodology is capable of highlighting consistent structural-semantic relationships — which are expected to become more precise and expressive when applied to the full corpus.
+* **Window impact**: Heatmaps illustrate how varying the context window affects the alignment of partitions, with some windows (e.g., 5 or full) acting as anchors of stability or divergence.
 
 ---
 
