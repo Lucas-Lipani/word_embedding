@@ -72,7 +72,7 @@ def compare_all_pairs(dict_a, dict_b, model_a, model_b):
 
 def process_seed_folder(seed_folder):
     seed_folder = Path(seed_folder)
-    print(f"\n📁 Processando: {seed_folder}")
+    print(f"\nProcessando: {seed_folder}")
 
     runs_data = load_all_runs(seed_folder)
     all_metrics = []
@@ -89,11 +89,11 @@ def process_seed_folder(seed_folder):
         df_run = pd.DataFrame(rows)
         out_file = seed_folder / f"metrics_run{run_id}.parquet"
         df_run.to_parquet(out_file, engine="pyarrow")
-        print(f"[✔] Run {run_id} → {out_file.name}")
+        print(f"Run {run_id} → {out_file.name}")
         all_metrics.append(df_run)
 
     if not all_metrics:
-        print("[⚠] Nenhuma métrica gerada.")
+        print("!!! Nenhuma métrica gerada !!!")
         return
 
     df_all = pd.concat(all_metrics, ignore_index=True)
@@ -109,7 +109,7 @@ def process_seed_folder(seed_folder):
 
     mean_file = seed_folder / "running_mean.parquet"
     mean_df.to_parquet(mean_file, engine="pyarrow")
-    print(f"[✔] Média final → {mean_file.name}")
+    print(f"Média final → {mean_file.name}")
 
 
 if __name__ == "__main__":

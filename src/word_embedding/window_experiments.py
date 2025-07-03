@@ -110,7 +110,7 @@ def main():
 
     for r in range(n_runs):
         print(f"\n=== Execução {r+1}/{n_runs} ===")
-        print(f"[ℹ] Seed usada (fixa): {fixed_seed}")
+        print(f"Seed usada (fixa): {fixed_seed}")
 
         sbm_term_labels, w2v_term_labels = word_embedding(df_docs, nlp, WINDOW_LIST)
 
@@ -147,7 +147,7 @@ def main():
                         window=window,
                         partitions_df=df_model
                     )
-                    print(f"[✔] {model.upper()}_J{window} run {idx:03d} salvo em {file.relative_to(Path.cwd())}")
+                    print(f"{model.upper()}_J{window} run {idx:03d} salvo em {file.relative_to(Path.cwd())}")
 
 
 if __name__ == "__main__":
