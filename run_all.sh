@@ -22,4 +22,4 @@ python3 word_embedding/compute_partition_metrics.py
 echo "=== Gerando heatmaps ==="
 python3 word_embedding/plot_average_heatmap.py
 
-echo "✅ Pipeline completo com $RUNS execuções e $SAMPLES amostras."
+echo "Pipeline completo com $RUNS execuções e $SAMPLES amostras."

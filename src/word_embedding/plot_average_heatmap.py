@@ -1,68 +1,72 @@
+# plot_average_heatmap.py — ONLY plotting heat‑maps
+# Expects running_mean.parquet already computed in:
+#   outputs/partitions/<n_samples>/<seed_xxxx>/analysis/<model_x>_vs_<model_y>/running_mean.parquet
+
 from pathlib import Path
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import colorcet as cc
 
+# -----------------------------------------------------------------------------
 
-def plot_heatmap(df, tipo="sbm_w2v", metric="nmi", folder=Path(".")):
-    df_filtered = df[df["model_pair"] == tipo]
-    if metric not in df_filtered.columns:
-        print(f"!!! Métrica '{metric}' não encontrada no dataframe. !!!")
+def _window_sort_key(win):
+    return float('inf') if win == 'full' else int(win)
+
+
+def plot_mean_heatmap(parquet_file: Path, metric: str, n_samples: str):
+    if not parquet_file.exists():
         return
 
-    # Ordenação lógica desejada
-    window_order = [str(w) for w in [5, 10, 20, 40, "full"]]
+    df = pd.read_parquet(parquet_file)
+    model_x, model_y = parquet_file.parent.name.split("_vs_")
 
-    df_pivot = df_filtered.pivot(index="sbm_window", columns="w2v_window", values=metric)
-    df_pivot = df_pivot.reindex(index=window_order, columns=window_order)
+    row_key = f"{model_x}_row_window" if model_x == model_y else f"{model_x}_window"
+    col_key = f"{model_y}_col_window" if model_x == model_y else f"{model_y}_window"
 
-    if df_pivot.empty:
-        print(f"!!! Nenhum dado válido para {metric.upper()} ({tipo}) em {folder} !!!")
+    if {row_key, col_key, metric}.difference(df.columns):
         return
 
-    plt.figure(figsize=(len(df_pivot.columns) + 1, len(df_pivot.index) + 1))
-    sns.heatmap(
-        df_pivot,
-        annot=True,
-        fmt=".2f",
-        cmap=getattr(cc.cm, "bgy" if metric != "vi" else "fire"),
-        linewidths=0.5,
-        cbar=True,
-        vmin=0,
-        vmax=1
-    )
-    plt.title(f"{metric.upper()} – {tipo.replace('_', ' × ').upper()}")
-    plt.xlabel("Word2Vec Window")
-    plt.ylabel("SBM Window")
+    df = df[[row_key, col_key, metric]].dropna()
+    if df.empty:
+        return
+
+    df[row_key] = pd.Categorical(df[row_key], sorted(df[row_key].unique(), key=_window_sort_key), ordered=True)
+    df[col_key] = pd.Categorical(df[col_key], sorted(df[col_key].unique(), key=_window_sort_key), ordered=True)
+    pivot = df.pivot(index=row_key, columns=col_key, values=metric)
+
+    plt.figure(figsize=(len(pivot.columns)+1, len(pivot.index)+1))
+    vmin, vmax = (0, 1) if metric in {"nmi", "ari"} else (0, None)
+    sns.heatmap(pivot, annot=True, fmt=".2f", cmap=getattr(cc.cm, "bgy"), vmin=vmin, vmax=vmax,
+                linewidths=0.5, cbar=True)
+
+    plt.title(f"Mean {metric.upper()} — {n_samples} samples")
+    plt.ylabel(f"{model_x.upper()} window")
+    plt.xlabel(f"{model_y.upper()} window")
     plt.tight_layout()
-    plt.gca().invert_yaxis()  # Inverte o eixo y para mostrar do 5 ao full
 
-    out_file = Path(folder) / f"mean_{metric}_{tipo}.png"
-    plt.savefig(out_file)
-    print(f"Heatmap salvo: {out_file}")
+    out_png = parquet_file.parent / f"mean_{metric}.png"
+    plt.savefig(out_png)
     plt.close()
+    print(f"Heatmap salvo: {out_png}")
 
-
-
-def main():
-    base_path = Path("../outputs/partitions").resolve()
-    seed_folders = sorted(base_path.glob("*/*/"))
-
-    for seed_path in seed_folders:
-        mean_file = seed_path / "running_mean.parquet"
-        if not mean_file.exists():
-            continue
-
-        print(f"\nGerando gráficos para: {seed_path}")
-        df = pd.read_parquet(mean_file)
-
-        for tipo in ["sbm_w2v", "sbm_sbm", "w2v_w2v"]:
-            if tipo not in df["model_pair"].unique():
-                continue
-            for metric in ["nmi", "vi", "ari"]:
-                plot_heatmap(df, tipo=tipo, metric=metric, folder=seed_path)
-
+# -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    main()
+    base = Path("../outputs/partitions")
+
+    for sample_dir in sorted(base.glob("*")):
+        if not sample_dir.is_dir():
+            continue
+        n_samples = sample_dir.name
+        print(f"Amostras: {n_samples}")
+
+        for seed_dir in sorted(sample_dir.glob("seed_*")):
+            if not seed_dir.is_dir():
+                continue
+            print(f"  Seed: {seed_dir.name}")
+
+            for parquet_file in seed_dir.glob("analysis/*/running_mean.parquet"):
+                for met in ("nmi", "vi", "ari"):
+                    plot_mean_heatmap(parquet_file, met, n_samples)

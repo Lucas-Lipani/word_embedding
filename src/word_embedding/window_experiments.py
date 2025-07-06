@@ -92,7 +92,7 @@ def word_embedding(df_docs, nlp, window_list):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs", type=int, default=10, help="Nº de repetições")
-    parser.add_argument("--samples", type=int, default=500)
+    parser.add_argument("--samples", type=int, default=100, help="Nº de documentos amostrados")
     parser.add_argument("--seed", type=int, default=None, help="Seed fixa (usada para todas as runs)")
     args = parser.parse_args()
 
