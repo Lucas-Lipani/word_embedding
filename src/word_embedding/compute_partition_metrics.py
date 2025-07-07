@@ -1,22 +1,24 @@
-# compute_partition_metrics.py — generate running_mean.parquet files only
-# Scans raw partitions_run*.parquet produced by experiments and computes
-# mean VI / NMI / ARI matrices for each seed and each comparison.
-# Output is stored in:
-#   outputs/partitions/<n_samples>/<seed_xxxx>/analysis/<model_x>_vs_<model_y>/running_mean.parquet
-
 from pathlib import Path
 import pandas as pd
 import numpy as np
 from graph_tool.all import variation_information, partition_overlap
 from sklearn.metrics import adjusted_rand_score
 
-# ----------------------------------------------------------------------------
 
 def _window_sort_key(w):
-    return float('inf') if w == 'full' else int(w)
+    """
+    Ordena janelas de forma que 'full' fique no final.
+    """
+    return float("inf") if w == "full" else int(w)
 
 
 def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray):
+    """ "
+    Compara duas séries de rótulos de partição e calcula:
+    - Variational Information (VI)
+    - Normalized Mutual Information (NMI)
+    - Adjusted Rand Index (ARI)
+    """
     vi = variation_information(labels_a, labels_b)
     po = partition_overlap(labels_a, labels_b)
     nmi = po[2] if isinstance(po, (tuple, list, np.ndarray)) else float(po)
@@ -25,20 +27,23 @@ def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray):
 
 
 def compute_seed(seed_dir: Path, model_x: str, model_y: str):
+    # Define o diretório onde o arquivo final "running_mean.parquet" será salvo
     out_root = seed_dir / "analysis" / f"{model_x}_vs_{model_y}"
     out_root.mkdir(parents=True, exist_ok=True)
 
+    # Coleta todos os arquivos de partições para as execuções (runs) deste seed
     part_files = list(seed_dir.rglob("partitions_run*.parquet"))
     if not part_files:
         print(f"  [WARN] Nenhum partitions_run* encontrado em {seed_dir}")
         return
 
+    # Lê os dataframes de partição, adicionando o número da execução ("run") extraído do nome do arquivo
     dfs = []
     for pf in part_files:
         try:
             run_idx = int(pf.stem.split("_run")[1].split("_")[0])
         except ValueError:
-            continue
+            continue  # Ignora arquivos mal formatados
         df = pd.read_parquet(pf)
         df["run"] = run_idx
         dfs.append(df)
@@ -47,51 +52,89 @@ def compute_seed(seed_dir: Path, model_x: str, model_y: str):
         print(f"  [WARN] Partitions mal nomeados em {seed_dir}")
         return
 
+    # Junta todos os dataframes em um só
     data = pd.concat(dfs, ignore_index=True)
-    data["window"] = data["window"].astype(str)
+    data["window"] = data["window"].astype(
+        str
+    )  # garante que o tipo de janela seja string
 
+    # Obtém a lista de execuções (runs) e janelas únicas, já ordenadas
     runs = sorted(data["run"].unique())
     windows = sorted(data["window"].unique(), key=_window_sort_key)
 
+    # Define os nomes das colunas para linha/coluna do heatmap
+    # Se os modelos forem iguais, cria "sbm_row_window" × "sbm_col_window"
+    # Se forem diferentes, cria "sbm_window" × "w2v_window"
     row_key = f"{model_x}_row_window" if model_x == model_y else f"{model_x}_window"
     col_key = f"{model_y}_col_window" if model_x == model_y else f"{model_y}_window"
 
-    rows = []
+    rows = []  # aqui vamos armazenar os resultados de comparação
+
+    # Loop sobre todas as janelas possíveis dos dois modelos
     for wx in windows:
         for wy in windows:
+            # Loop sobre todas as execuções (runs) do modelo X
             for r1 in runs:
-                df_x = data[(data["model"] == model_x) & (data["window"] == wx) & (data["run"] == r1)]
+                # Filtra a partição de modelo X na janela wx e execução r1
+                df_x = data[
+                    (data["model"] == model_x)
+                    & (data["window"] == wx)
+                    & (data["run"] == r1)
+                ]
                 if df_x.empty:
                     continue
+
+                # Loop sobre todas as execuções (runs) do modelo Y
                 for r2 in runs:
+                    # Se for o mesmo modelo e mesma execução, ignora (auto-comparação)
                     if model_x == model_y and r1 == r2:
                         continue
-                    df_y = data[(data["model"] == model_y) & (data["window"] == wy) & (data["run"] == r2)]
+
+                    # Filtra a partição de modelo Y na janela wy e execução r2
+                    df_y = data[
+                        (data["model"] == model_y)
+                        & (data["window"] == wy)
+                        & (data["run"] == r2)
+                    ]
                     if df_y.empty:
                         continue
+
+                    # Verifica os termos em comum entre as duas partições
                     common = set(df_x["term"]).intersection(df_y["term"])
                     if len(common) < 2:
-                        continue
-                    vi, nmi, ari = _compare_metrics(
-                        df_x.set_index("term").loc[list(common)]["label"].values,
-                        df_y.set_index("term").loc[list(common)]["label"].values,
-                    )
-                    rows.append({row_key: wx, col_key: wy, "vi": vi, "nmi": nmi, "ari": ari})
+                        continue  # precisa de pelo menos dois termos para calcular as métricas
 
+                    # Obtém os labels correspondentes aos termos em comum
+                    labels_x = df_x.set_index("term").loc[list(common)]["label"].values
+                    labels_y = df_y.set_index("term").loc[list(common)]["label"].values
+
+                    # Calcula VI, NMI, ARI entre essas partições
+                    vi, nmi, ari = _compare_metrics(labels_x, labels_y)
+
+                    # Armazena a comparação para posterior agregação
+                    rows.append(
+                        {row_key: wx, col_key: wy, "vi": vi, "nmi": nmi, "ari": ari}
+                    )
+
+    # Se nenhuma comparação foi válida (sem termos em comum suficientes), avisa e retorna
     if not rows:
-        print(f"  [WARN] Nenhum termo comum para {model_x} vs {model_y} em {seed_dir.name}")
+        print(
+            f"  [WARN] Nenhum termo comum para {model_x} vs {model_y} em {seed_dir.name}"
+        )
         return
 
+    # Converte os resultados em DataFrame e calcula a média por par de janelas
     mean_df = (
         pd.DataFrame(rows)
-        .groupby([row_key, col_key])[['vi', 'nmi', 'ari']].mean()
+        .groupby([row_key, col_key])[["vi", "nmi", "ari"]]
+        .mean()
         .reset_index()
     )
 
+    # Salva o arquivo de médias no formato Parquet
     mean_df.to_parquet(out_root / "running_mean.parquet", engine="pyarrow")
     print(f"    running_mean salvo: {out_root / 'running_mean.parquet'}")
 
-# ----------------------------------------------------------------------------
 
 if __name__ == "__main__":
     base = Path("../outputs/partitions")

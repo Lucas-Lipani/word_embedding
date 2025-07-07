@@ -85,7 +85,7 @@ def build_window_graph(g, df, nlp, w):
         # ───── janelas centradas em cada token ─────
         for i, term_central in enumerate(toks):
             start, end = max(0, i - w_local), min(len(toks), i + w_local + 1)
-            win_tokens = toks[start:i] + toks[i + 1: end]  # contexto
+            win_tokens = toks[start:i] + toks[i + 1 : end]  # contexto
             win_key = (frozenset(win_tokens), term_central)  # deduplicação
 
             # --- vértice Janela ---
@@ -171,13 +171,9 @@ def extract_window_term_graph(g):
 
     # Copiar propriedades
     for prop in g.vp.keys():
-        g_win_term.vp[prop] = g_win_term.new_vertex_property(
-            g.vp[prop].value_type()
-        )
+        g_win_term.vp[prop] = g_win_term.new_vertex_property(g.vp[prop].value_type())
     for prop in g.ep.keys():
-        g_win_term.ep[prop] = g_win_term.new_edge_property(
-            g.ep[prop].value_type()
-        )
+        g_win_term.ep[prop] = g_win_term.new_edge_property(g.ep[prop].value_type())
 
     # Mapear vértices válidos
     vertex_map = {}
@@ -300,13 +296,9 @@ def extract_doc_term_graph(g):
 
     # Criar propriedades
     for prop in g.vp.keys():
-        g_doc_term.vp[prop] = g_doc_term.new_vertex_property(
-            g.vp[prop].value_type()
-        )
+        g_doc_term.vp[prop] = g_doc_term.new_vertex_property(g.vp[prop].value_type())
     for prop in g.ep.keys():
-        g_doc_term.ep[prop] = g_doc_term.new_edge_property(
-            g.ep[prop].value_type()
-        )
+        g_doc_term.ep[prop] = g_doc_term.new_edge_property(g.ep[prop].value_type())
 
     vertex_map = {}
     term_ids = {}

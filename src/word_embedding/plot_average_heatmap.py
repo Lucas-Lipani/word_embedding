@@ -1,7 +1,3 @@
-# plot_average_heatmap.py — ONLY plotting heat‑maps
-# Expects running_mean.parquet already computed in:
-#   outputs/partitions/<n_samples>/<seed_xxxx>/analysis/<model_x>_vs_<model_y>/running_mean.parquet
-
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -9,10 +5,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import colorcet as cc
 
-# -----------------------------------------------------------------------------
 
 def _window_sort_key(win):
-    return float('inf') if win == 'full' else int(win)
+    return float("inf") if win == "full" else int(win)
 
 
 def plot_mean_heatmap(parquet_file: Path, metric: str, n_samples: str):
@@ -32,14 +27,26 @@ def plot_mean_heatmap(parquet_file: Path, metric: str, n_samples: str):
     if df.empty:
         return
 
-    df[row_key] = pd.Categorical(df[row_key], sorted(df[row_key].unique(), key=_window_sort_key), ordered=True)
-    df[col_key] = pd.Categorical(df[col_key], sorted(df[col_key].unique(), key=_window_sort_key), ordered=True)
+    df[row_key] = pd.Categorical(
+        df[row_key], sorted(df[row_key].unique(), key=_window_sort_key), ordered=True
+    )
+    df[col_key] = pd.Categorical(
+        df[col_key], sorted(df[col_key].unique(), key=_window_sort_key), ordered=True
+    )
     pivot = df.pivot(index=row_key, columns=col_key, values=metric)
 
-    plt.figure(figsize=(len(pivot.columns)+1, len(pivot.index)+1))
+    plt.figure(figsize=(len(pivot.columns) + 1, len(pivot.index) + 1))
     vmin, vmax = (0, 1) if metric in {"nmi", "ari"} else (0, None)
-    sns.heatmap(pivot, annot=True, fmt=".2f", cmap=getattr(cc.cm, "bgy"), vmin=vmin, vmax=vmax,
-                linewidths=0.5, cbar=True)
+    sns.heatmap(
+        pivot,
+        annot=True,
+        fmt=".2f",
+        cmap=getattr(cc.cm, "bgy"),
+        vmin=vmin,
+        vmax=vmax,
+        linewidths=0.5,
+        cbar=True,
+    )
 
     plt.title(f"Mean {metric.upper()} — {n_samples} samples")
     plt.ylabel(f"{model_x.upper()} window")
@@ -51,7 +58,6 @@ def plot_mean_heatmap(parquet_file: Path, metric: str, n_samples: str):
     plt.close()
     print(f"Heatmap salvo: {out_png}")
 
-# -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
     base = Path("../outputs/partitions")

@@ -3,11 +3,13 @@ from pathlib import Path
 import re
 import pandas as pd
 
+
 def _build_dir(base_out, n_samples, windows):
     win_tag = "-".join(map(str, windows))
     out_dir = Path(base_out) / f"{n_samples}s_{win_tag}w"
     out_dir.mkdir(parents=True, exist_ok=True)
     return out_dir
+
 
 def _next_run_idx(out_dir):
     # procura ficheiros do tipo *_runNNN_*.parquet
@@ -26,10 +28,7 @@ def save_partitions_only(base_dir, n_samples, seed, model_name, window, partitio
     n_samples/seed/model_window/partitions_runXXX.parquet
     """
     out_dir = (
-        Path(base_dir)
-        / str(n_samples)
-        / f"seed_{seed}"
-        / f"{model_name}_J{window}"
+        Path(base_dir) / str(n_samples) / f"seed_{seed}" / f"{model_name}_J{window}"
     )
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -37,7 +36,8 @@ def save_partitions_only(base_dir, n_samples, seed, model_name, window, partitio
     existing = list(out_dir.glob("partitions_run*.parquet"))
     run_idx = (
         max([int(p.stem.split("run")[1]) for p in existing], default=0) + 1
-        if existing else 1
+        if existing
+        else 1
     )
 
     fname = out_dir / f"partitions_run{run_idx:03d}.parquet"
@@ -65,6 +65,7 @@ def save_run(out_base, n_samples, windows, metrics_df, partitions_df):
 
     return run_idx, metrics_f, partitions_f
 
+
 def _update_running_mean(out_dir):
     """Concatena todos os metrics*.parquet, tira média e salva."""
     metrics_files = sorted(out_dir.glob("metrics_run*.parquet"))
@@ -75,5 +76,4 @@ def _update_running_mean(out_dir):
         for p in metrics_files
     ]
     mean_df = sum(all_metrics) / len(all_metrics)
-    mean_df.reset_index().to_parquet(out_dir / "running_mean.parquet",
-                                     engine="pyarrow")
+    mean_df.reset_index().to_parquet(out_dir / "running_mean.parquet", engine="pyarrow")

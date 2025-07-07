@@ -37,7 +37,9 @@ def count_connected_term_blocks(state, g):
 
     print("\n[Depuração] Blocos conectados por tipo:")
     for tipo, blocos in sorted(blocks_by_type.items()):
-        nome = {0: "Documento", 1: "Termo", 3: "Janela", 4: "Contexto"}.get(tipo, f"Tipo {tipo}")
+        nome = {0: "Documento", 1: "Termo", 3: "Janela", 4: "Contexto"}.get(
+            tipo, f"Tipo {tipo}"
+        )
         print(f"  - {nome:<10}: {len(blocos)} blocos")
 
     return len(term_blocks)
@@ -45,8 +47,7 @@ def count_connected_term_blocks(state, g):
 
 def word_embedding(df_docs, nlp, window_list):
     w2v_models = {
-        w: w2vec_kmeans.get_or_train_w2v_model({}, w, df_docs, nlp)
-        for w in window_list
+        w: w2vec_kmeans.get_or_train_w2v_model({}, w, df_docs, nlp) for w in window_list
     }
 
     sbm_term_labels = {}
@@ -75,7 +76,9 @@ def word_embedding(df_docs, nlp, window_list):
 
         # W2V clustering
         g_dt = doc_term.copy()
-        _ = w2vec_kmeans.cluster_terms(g_dt, w2v_models[sbm_window], n_clusters=k_blocks)
+        _ = w2vec_kmeans.cluster_terms(
+            g_dt, w2v_models[sbm_window], n_clusters=k_blocks
+        )
 
         w2v_labels = {}
         for v in g_dt.vertices():
@@ -92,8 +95,12 @@ def word_embedding(df_docs, nlp, window_list):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs", type=int, default=10, help="Nº de repetições")
-    parser.add_argument("--samples", type=int, default=100, help="Nº de documentos amostrados")
-    parser.add_argument("--seed", type=int, default=None, help="Seed fixa (usada para todas as runs)")
+    parser.add_argument(
+        "--samples", type=int, default=100, help="Nº de documentos amostrados"
+    )
+    parser.add_argument(
+        "--seed", type=int, default=None, help="Seed fixa (usada para todas as runs)"
+    )
     args = parser.parse_args()
 
     n_runs = args.runs
@@ -117,16 +124,16 @@ def main():
         partitions_rows = []
         for w, term_map in sbm_term_labels.items():
             for term, label in term_map.items():
-                partitions_rows.append({
-                    "window": w, "model": "sbm", "term": term, "label": label
-                })
+                partitions_rows.append(
+                    {"window": w, "model": "sbm", "term": term, "label": label}
+                )
 
         for w, labels in w2v_term_labels.items():
             terms = list(sbm_term_labels[w].keys())
             for term, label in zip(terms, labels):
-                partitions_rows.append({
-                    "window": w, "model": "w2v", "term": term, "label": label
-                })
+                partitions_rows.append(
+                    {"window": w, "model": "w2v", "term": term, "label": label}
+                )
 
         partitions_df = pd.DataFrame(partitions_rows)
         partitions_df["window"] = partitions_df["window"].astype(str)
@@ -135,8 +142,8 @@ def main():
         for model in ["sbm", "w2v"]:
             for window in WINDOW_LIST:
                 df_model = partitions_df[
-                    (partitions_df["model"] == model) &
-                    (partitions_df["window"] == str(window))
+                    (partitions_df["model"] == model)
+                    & (partitions_df["window"] == str(window))
                 ]
                 if not df_model.empty:
                     idx, file = results_io.save_partitions_only(
@@ -145,9 +152,11 @@ def main():
                         seed=fixed_seed,
                         model_name=model,
                         window=window,
-                        partitions_df=df_model
+                        partitions_df=df_model,
                     )
-                    print(f"{model.upper()}_J{window} run {idx:03d} salvo em {file.relative_to(Path.cwd())}")
+                    print(
+                        f"{model.upper()}_J{window} run {idx:03d} salvo em {file.relative_to(Path.cwd())}"
+                    )
 
 
 if __name__ == "__main__":
