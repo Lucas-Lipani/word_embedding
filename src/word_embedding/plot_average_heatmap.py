@@ -28,7 +28,7 @@ def plot_mean_heatmap(parquet_file: Path, metric: str, n_samples: str):
         return
 
     df[row_key] = pd.Categorical(
-        df[row_key], sorted(df[row_key].unique(), key=_window_sort_key), ordered=True
+        df[row_key], sorted(df[row_key].unique(), key=_window_sort_key)[::-1], ordered=True
     )
     df[col_key] = pd.Categorical(
         df[col_key], sorted(df[col_key].unique(), key=_window_sort_key), ordered=True
@@ -36,7 +36,11 @@ def plot_mean_heatmap(parquet_file: Path, metric: str, n_samples: str):
     pivot = df.pivot(index=row_key, columns=col_key, values=metric)
 
     plt.figure(figsize=(len(pivot.columns) + 1, len(pivot.index) + 1))
-    vmin, vmax = (0, 1) if metric in {"nmi", "ari"} else (0, None)
+    normalized_metrics = {
+        "nvi", "nmi", "anmi", "ami", "ari", "rmi", "nrmi", "npo"
+    }
+    vmin, vmax = (0, 1) if metric in normalized_metrics else (0, None)
+
     sns.heatmap(
         pivot,
         annot=True,
@@ -74,6 +78,11 @@ if __name__ == "__main__":
             print(f"  Seed: {seed_dir.name}")
 
             for parquet_file in seed_dir.glob("analysis/*/running_mean.parquet"):
-                for met in ("nmi", "vi", "ari", "mi", "rmi"):
+                df_preview = pd.read_parquet(parquet_file, columns=None)
+                metric_candidates = set(df_preview.columns) - {"run", "window", "model", "term", "label", "w2v_col_window", "w2v_row_window", "w2v_window", "sbm_window",
+                                                               "sbm_row_window", "sbm_col_window"}
+                # Remove também row_key e col_key se quiser
+                for met in metric_candidates:                    
                     plot_mean_heatmap(parquet_file, met, n_samples)
+
 

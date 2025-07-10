@@ -12,20 +12,24 @@ def _window_sort_key(w):
     return float("inf") if w == "full" else int(w)
 
 
-def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray):
+def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray) -> dict:
     """ 
-    Compara duas séries de rótulos de partição e calcula:
-    - Variational Information (VI)
-    - Normalized Mutual Information (NMI)
-    - Adjusted Rand Index (ARI)
+    Compara duas séries de rótulos de partição e retorna um dicionário de métricas.
     """
-    vi = variation_information(labels_a, labels_b)
-    po = partition_overlap(labels_a, labels_b)
-    nmi = po[2] if isinstance(po, (tuple, list, np.ndarray)) else float(po)
-    ari = adjusted_rand_score(labels_a, labels_b)
-    mi = mutual_information(labels_a, labels_b)
-    rmi = reduced_mutual_information(labels_a, labels_b)
-    return vi, nmi, ari, mi, rmi
+    return {
+        "vi": variation_information(labels_a, labels_b, norm=False),
+        "nvi": variation_information(labels_a, labels_b, norm=True),
+        "po": partition_overlap(labels_a, labels_b, norm=False),
+        "npo": partition_overlap(labels_a, labels_b, norm=True),
+        "mi": mutual_information(labels_a, labels_b, norm=False, adjusted=False),
+        "ami": mutual_information(labels_a, labels_b, norm=False, adjusted=True),
+        "nmi": mutual_information(labels_a, labels_b, norm=True, adjusted=False),
+        "anmi": mutual_information(labels_a, labels_b, norm=True, adjusted=True),
+        "ari": adjusted_rand_score(labels_a, labels_b),
+        "rmi": reduced_mutual_information(labels_a, labels_b, norm=False),
+        "nrmi": reduced_mutual_information(labels_a, labels_b, norm=True)
+    }
+
 
 
 def compute_seed(seed_dir: Path, model_x: str, model_y: str):
@@ -110,17 +114,11 @@ def compute_seed(seed_dir: Path, model_x: str, model_y: str):
                     labels_x = df_x.set_index("term").loc[list(common)]["label"].values
                     labels_y = df_y.set_index("term").loc[list(common)]["label"].values
 
-                    # Calcula VI, NMI, ARI entre essas partições
-                    vi, nmi, ari, mi, rmi = _compare_metrics(labels_x, labels_y)
+                    metrics = _compare_metrics(labels_x, labels_y)
+                    row_data = {row_key: wx, col_key: wy}
+                    row_data.update(metrics)
+                    rows.append(row_data)
 
-                    # Armazena a comparação para posterior agregação
-                    rows.append(
-                        {
-                            row_key: wx, col_key: wy,
-                            "vi": vi, "nmi": nmi, "ari": ari,
-                            "mi": mi, "rmi": rmi
-                        }
-                    )
 
 
     # Se nenhuma comparação foi válida (sem termos em comum suficientes), avisa e retorna
@@ -131,9 +129,11 @@ def compute_seed(seed_dir: Path, model_x: str, model_y: str):
         return
 
     # Converte os resultados em DataFrame e calcula a média por par de janelas
+    metric_keys = list(metrics.keys())
+
     mean_df = (
         pd.DataFrame(rows)
-        .groupby([row_key, col_key])[["vi", "nmi", "ari", "mi", "rmi"]]
+        .groupby([row_key, col_key])[metric_keys]
         .mean()
         .reset_index()
     )
