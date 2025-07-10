@@ -16,6 +16,12 @@ def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray) -> dict:
     """ 
     Compara duas séries de rótulos de partição e retorna um dicionário de métricas.
     """
+    # print(len(labels_a), len(labels_b))
+    if len(labels_a) != len(labels_b):
+        raise ValueError("As duas séries de rótulos devem ter o mesmo comprimento.")
+    # else:
+    #     # print("  [OK] Comprimentos iguais:", len(labels_a)) 
+    #     continue
     return {
         "vi": variation_information(labels_a, labels_b, norm=False),
         "nvi": variation_information(labels_a, labels_b, norm=True),

@@ -109,7 +109,7 @@ def main():
     n_samples = args.samples
     fixed_seed = args.seed if args.seed is not None else int(time.time()) % 2**32
 
-    WINDOW_LIST = [5, 10, 20, 40, "full"]
+    WINDOW_LIST = [10, 20]
     OUT_PARTITIONS = BASE_DIR / "../../outputs/partitions"
 
     nlp = spacy.load("en_core_web_sm")

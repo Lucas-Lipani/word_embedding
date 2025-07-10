@@ -8,7 +8,11 @@ def sbm(g, layered=False, n_blocks=None):
             state_args=dict(
                 eweight=g.ep["weight"],  # (opcional) multiplicidade da aresta
                 pclabel=g.vp["tipo"],  # mantém janelas e termos em grupos separados
-                B =n_blocks,  # número fixo de blocos (opcional)
+                B=n_blocks,  # número fixo de blocos (opcional)
+            ),
+            multilevel_mcmc_args=dict(
+                B_min=n_blocks,
+                B_max=n_blocks,
             ),
         )
     else:
@@ -25,5 +29,8 @@ def sbm(g, layered=False, n_blocks=None):
             state=LayeredBlockState,
             state_args=state_args,
         )
+        
+    print("=== sbm ===")
+    print(state)
 
     return state

@@ -5,9 +5,9 @@ export PYTHONPATH=src
 
 # ---------- CONFIGURAÇÕES ----------
 SAMPLES=300
-RUNS=3
+RUNS=1
 SEED=1752143761  # Comente para usar aleatória
-N_BLOCKS=10      # Descomente para usar número fixo de blocos
+N_BLOCKS=30      # Descomente para usar número fixo de blocos
 
 # ---------- EXECUÇÃO DO PIPELINE ----------
 echo "=== Rodando window_experiments.py ==="
