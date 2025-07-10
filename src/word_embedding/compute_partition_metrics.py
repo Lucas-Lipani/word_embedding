@@ -1,7 +1,7 @@
 from pathlib import Path
 import pandas as pd
 import numpy as np
-from graph_tool.all import variation_information, partition_overlap
+from graph_tool.all import variation_information, partition_overlap, mutual_information, reduced_mutual_information
 from sklearn.metrics import adjusted_rand_score
 
 
@@ -13,7 +13,7 @@ def _window_sort_key(w):
 
 
 def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray):
-    """ "
+    """ 
     Compara duas séries de rótulos de partição e calcula:
     - Variational Information (VI)
     - Normalized Mutual Information (NMI)
@@ -23,7 +23,9 @@ def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray):
     po = partition_overlap(labels_a, labels_b)
     nmi = po[2] if isinstance(po, (tuple, list, np.ndarray)) else float(po)
     ari = adjusted_rand_score(labels_a, labels_b)
-    return vi, nmi, ari
+    mi = mutual_information(labels_a, labels_b)
+    rmi = reduced_mutual_information(labels_a, labels_b)
+    return vi, nmi, ari, mi, rmi
 
 
 def compute_seed(seed_dir: Path, model_x: str, model_y: str):
@@ -109,12 +111,17 @@ def compute_seed(seed_dir: Path, model_x: str, model_y: str):
                     labels_y = df_y.set_index("term").loc[list(common)]["label"].values
 
                     # Calcula VI, NMI, ARI entre essas partições
-                    vi, nmi, ari = _compare_metrics(labels_x, labels_y)
+                    vi, nmi, ari, mi, rmi = _compare_metrics(labels_x, labels_y)
 
                     # Armazena a comparação para posterior agregação
                     rows.append(
-                        {row_key: wx, col_key: wy, "vi": vi, "nmi": nmi, "ari": ari}
+                        {
+                            row_key: wx, col_key: wy,
+                            "vi": vi, "nmi": nmi, "ari": ari,
+                            "mi": mi, "rmi": rmi
+                        }
                     )
+
 
     # Se nenhuma comparação foi válida (sem termos em comum suficientes), avisa e retorna
     if not rows:
@@ -126,10 +133,11 @@ def compute_seed(seed_dir: Path, model_x: str, model_y: str):
     # Converte os resultados em DataFrame e calcula a média por par de janelas
     mean_df = (
         pd.DataFrame(rows)
-        .groupby([row_key, col_key])[["vi", "nmi", "ari"]]
+        .groupby([row_key, col_key])[["vi", "nmi", "ari", "mi", "rmi"]]
         .mean()
         .reset_index()
     )
+
 
     # Salva o arquivo de médias no formato Parquet
     mean_df.to_parquet(out_root / "running_mean.parquet", engine="pyarrow")

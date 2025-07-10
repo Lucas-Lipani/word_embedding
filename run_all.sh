@@ -5,16 +5,23 @@ export PYTHONPATH=src
 
 # ---------- CONFIGURAÇÕES ----------
 SAMPLES=300
-RUNS=10
-# SEED=1751458615  # Comente para usar aleatória
+RUNS=3
+SEED=1752143761  # Comente para usar aleatória
+N_BLOCKS=10      # Descomente para usar número fixo de blocos
 
 # ---------- EXECUÇÃO DO PIPELINE ----------
 echo "=== Rodando window_experiments.py ==="
-if [ -z "$SEED" ]; then
-    python3 -m word_embedding.window_experiments --samples $SAMPLES --runs $RUNS
-else
-    python3 -m word_embedding.window_experiments --samples $SAMPLES --runs $RUNS --seed $SEED
+ARGS="--samples $SAMPLES --runs $RUNS"
+
+if [ -n "$SEED" ]; then
+    ARGS="$ARGS --seed $SEED"
 fi
+
+if [ -n "$N_BLOCKS" ]; then
+    ARGS="$ARGS --n_blocks $N_BLOCKS"
+fi
+
+python3 -m word_embedding.window_experiments $ARGS
 
 echo "=== Calculando métricas ==="
 python3 word_embedding/compute_partition_metrics.py

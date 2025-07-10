@@ -74,5 +74,6 @@ if __name__ == "__main__":
             print(f"  Seed: {seed_dir.name}")
 
             for parquet_file in seed_dir.glob("analysis/*/running_mean.parquet"):
-                for met in ("nmi", "vi", "ari"):
+                for met in ("nmi", "vi", "ari", "mi", "rmi"):
                     plot_mean_heatmap(parquet_file, met, n_samples)
+
