@@ -1,5 +1,6 @@
 from pathlib import Path
 import pandas as pd
+import argparse
 import numpy as np
 from graph_tool.all import variation_information, partition_overlap, mutual_information, reduced_mutual_information
 from sklearn.metrics import adjusted_rand_score
@@ -112,9 +113,7 @@ def compute_seed(seed_dir: Path, model_x: str, model_y: str):
                         continue
 
                     # Verifica os termos em comum entre as duas partições
-                    common = set(df_x["term"]).intersection(df_y["term"])
-                    if len(common) < 2:
-                        continue  # precisa de pelo menos dois termos para calcular as métricas
+                    common = set(df_x["term"]).intersection(df_y["term"])  
 
                     # Obtém os labels correspondentes aos termos em comum
                     labels_x = df_x.set_index("term").loc[list(common)]["label"].values
@@ -151,6 +150,17 @@ def compute_seed(seed_dir: Path, model_x: str, model_y: str):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Compute mean comparison metrics for SBM and W2V partitions."
+    )
+    parser.add_argument(
+        "--seed", "-s",
+        help="Nome ou número da pasta seed a processar (ex: 42 ou seed_42). "
+             "Se omitido, todas as seeds serão processadas.",
+        default=None
+    )
+    args = parser.parse_args()
+
     base = Path("../outputs/partitions")
     comparisons = [("sbm", "w2v"), ("sbm", "sbm"), ("w2v", "w2v")]
 
@@ -159,8 +169,18 @@ if __name__ == "__main__":
             continue
         print(f"Amostras: {sample_dir.name}")
 
-        for seed_dir in sorted(sample_dir.glob("seed_*")):
+        # --- decide quais seeds percorrer ---
+        if args.seed is None:
+            seeds_to_check = sorted(sample_dir.glob("seed_*"))
+        else:
+            # aceita "42" ou "seed_42"
+            seed_name = args.seed if str(args.seed).startswith("seed_") else f"seed_{args.seed}"
+            seeds_to_check = [sample_dir / seed_name]
+
+        # ------------------------------------
+        for seed_dir in seeds_to_check:
             if not seed_dir.is_dir():
+                print(f"  [WARN] Seed {seed_dir.name} não encontrada para {sample_dir.name}")
                 continue
             print(f"  Seed: {seed_dir.name}")
             for model_x, model_y in comparisons:

@@ -57,9 +57,13 @@ def build_window_graph(g, df, nlp, w):
         df.iterrows(), desc="Processando Doc-Jan-Termos", total=len(df)
     ):
         doc_id = str(idx)
-        abstract = row["abstract"]
-        # abstract = ("Janela de teste para analisar se está fazendo tudo certo, caso "
-        # "esteja tudo certo, irei analisar o próximo.")
+        # abstract = row["abstract"]
+        abstract = ("Janela de teste para analisar se está fazendo tudo certo, caso "
+        "esteja tudo certo, irei analisar o próximo.")
+
+        print("Abstract")
+        print(abstract)
+
 
         # ───── vértice Documento ─────
         v_doc = g.add_vertex()
@@ -157,6 +161,162 @@ def build_window_graph(g, df, nlp, w):
             # ╰──────────────────────────────────────────────────────╯
 
     return g
+
+
+def build_window_graph_and_sliding(df, nlp, w):
+    """
+    Constrói dois grafos simultaneamente a partir do corpus:
+    - g_full: grafo DOCUMENTO–JANELA–TERMO (com camadas)
+    - g_slide: grafo Janela deslizante (tipo 5) → Termo (tipo 1)
+
+    A tokenização é feita apenas uma vez por documento.
+    """
+    g_full = initialize_graph()
+    g_slide = initialize_graph()
+    g_full.vp["termos"] = g_full.new_vertex_property("object")
+    g_slide.vp["termos"] = g_slide.new_vertex_property("object")
+
+    doc_y = term_y = win_y = slide_y = slide_term_y = 0
+    term_vertex_full = {}
+    term_vertex_slide = {}
+    doc_vertex = {}
+    window_vertex_full = {}
+    window_vertex_slide = {}
+
+    for idx, row in tqdm(df.iterrows(), desc="Processando documentos", total=len(df)):
+        doc_id = str(idx)
+        abstract = row["abstract"]
+        # abstract = ("Janela de teste para analisar se está fazendo tudo certo, caso "
+        # "esteja tudo certo, irei analisar o próximo.")
+
+        doc = nlp(abstract)
+        tokens = [
+            t.text.lower().strip()
+            for t in doc
+            if not t.is_stop and not t.is_punct
+        ]
+
+        # Tamanho local da janela
+        w_local = len(tokens) if w == "full" else int(w)
+        half_w = w_local // 2
+
+        # ───── Documento no g_full ─────
+        v_doc = g_full.add_vertex()
+        g_full.vp["name"][v_doc], g_full.vp["tipo"][v_doc] = doc_id, 0
+        g_full.vp["posicao"][v_doc] = [-15, doc_y]
+        g_full.vp["size"][v_doc], g_full.vp["color"][v_doc] = 20, [1, 0, 0, 1]
+        doc_y += 1
+        doc_vertex[doc_id] = v_doc
+
+        for i, term_central in enumerate(tokens):
+            # --------- g_full: JANELA (tipo 3) → termo central/contexto ---------
+            start, end = max(0, i - w_local), min(len(tokens), i + w_local + 1)
+            win_tokens = tokens[start:i] + tokens[i + 1:end]
+            win_key = (frozenset(win_tokens), term_central)
+
+            if win_key not in window_vertex_full:
+                v_win = g_full.add_vertex()
+                g_full.vp["name"][v_win] = " ".join(win_tokens)
+                g_full.vp["tipo"][v_win] = 3
+                g_full.vp["termos"][v_win] = win_tokens
+                g_full.vp["posicao"][v_win] = [0, win_y]
+                g_full.vp["size"][v_win] = 15
+                g_full.vp["color"][v_win] = [0.6, 0.6, 0.6, 1]
+                window_vertex_full[win_key] = v_win
+                win_y += 2
+            else:
+                v_win = window_vertex_full[win_key]
+
+            if g_full.edge(v_doc, v_win) is None:
+                g_full.add_edge(v_doc, v_win)
+
+            if term_central not in term_vertex_full:
+                v_term = g_full.add_vertex()
+                g_full.vp["name"][v_term] = term_central
+                g_full.vp["tipo"][v_term] = 1
+                g_full.vp["posicao"][v_term] = [15, term_y]
+                g_full.vp["size"][v_term] = 10
+                g_full.vp["color"][v_term] = [0, 0, 1, 1]
+                g_full.vp["amount"][v_term] = 1
+                term_vertex_full[term_central] = v_term
+                term_y += 1
+            else:
+                v_term = term_vertex_full[term_central]
+                g_full.vp["amount"][v_term] += 1
+
+            e0 = g_full.edge(v_win, v_term)
+            if e0 is None:
+                e0 = g_full.add_edge(v_win, v_term)
+                g_full.ep["weight"][e0] = 1
+                g_full.ep["layer"][e0] = 0
+            else:
+                g_full.ep["weight"][e0] += 1
+
+            for tok in win_tokens:
+                if tok not in term_vertex_full:
+                    v_tok = g_full.add_vertex()
+                    g_full.vp["name"][v_tok] = tok
+                    g_full.vp["tipo"][v_tok] = 1
+                    g_full.vp["posicao"][v_tok] = [15, term_y]
+                    g_full.vp["size"][v_tok] = 10
+                    g_full.vp["color"][v_tok] = [0, 0, 1, 1]
+                    g_full.vp["amount"][v_tok] = 1
+                    term_vertex_full[tok] = v_tok
+                    term_y += 1
+                else:
+                    v_tok = term_vertex_full[tok]
+                    g_full.vp["amount"][v_tok] += 1
+
+                e1 = g_full.edge(v_win, v_tok)
+                if e1 is None:
+                    e1 = g_full.add_edge(v_win, v_tok)
+                    g_full.ep["weight"][e1] = 1
+                    g_full.ep["layer"][e1] = 1
+                else:
+                    g_full.ep["weight"][e1] += 1
+
+        # --------- g_slide: janela deslizante (tipo 5) com termo central incluído ---------
+        for i in range(len(tokens)):
+            start = max(0, i - half_w)
+            end = min(len(tokens), i + half_w + 1)
+            slide_tokens = tokens[start:end]
+
+            if len(slide_tokens) < w_local:
+                continue  # ignorar janelas incompletas nas bordas
+
+            slide_key = " ".join(slide_tokens)
+            if slide_key not in window_vertex_slide:
+                v_slide = g_slide.add_vertex()
+                g_slide.vp["name"][v_slide] = slide_key
+                g_slide.vp["tipo"][v_slide] = 5
+                g_slide.vp["posicao"][v_slide] = [0, slide_y]
+                g_slide.vp["size"][v_slide] = 12
+                g_slide.vp["color"][v_slide] = [0.6, 0.6, 0.0, 1]
+                window_vertex_slide[slide_key] = v_slide
+                slide_y += 1
+            else:
+                v_slide = window_vertex_slide[slide_key]
+
+            for tok in slide_tokens:
+                if tok not in term_vertex_slide:
+                    v_tok = g_slide.add_vertex()
+                    g_slide.vp["name"][v_tok] = tok
+                    g_slide.vp["tipo"][v_tok] = 1
+                    g_slide.vp["posicao"][v_tok] = [15, slide_term_y]
+                    g_slide.vp["size"][v_tok] = 10
+                    g_slide.vp["color"][v_tok] = [0, 0, 1, 1]
+                    term_vertex_slide[tok] = v_tok
+                    slide_term_y += 1
+                v_tok = term_vertex_slide[tok]
+                e = g_slide.edge(v_slide, v_tok)
+                if e is None:
+                    e = g_slide.add_edge(v_slide, v_tok)
+                    g_slide.ep["layer"][e] = 0
+                    g_slide.ep["weight"][e] = 1
+                else:
+                    g_slide.ep["weight"][e] += 1
+
+    return g_full, g_slide
 
 
 def extract_window_term_graph(g):

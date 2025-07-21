@@ -4,11 +4,12 @@ import spacy
 import pandas as pd
 import argparse
 from collections import defaultdict
+from graph_tool.all import graph_draw
 
 from . import (
     graph_build,
     graph_sbm,
-    graph_draw,
+    # graph_draw,
     results_io,
     w2vec_kmeans,
 )
@@ -17,32 +18,29 @@ BASE_DIR = Path(__file__).resolve().parent
 
 
 def count_connected_term_blocks(state, g):
-    blocks_vec = state.get_blocks().a
-    connected_blocks = set()
-    for v in g.vertices():
-        if v.out_degree() + v.in_degree() > 0:
-            bloco = int(blocks_vec[int(v)])
-            connected_blocks.add(bloco)
+    blocks_map = state.get_blocks()
+    connected = {int(blocks_map[v])
+                 for v in g.vertices()
+                 if v.out_degree() + v.in_degree() > 0}
 
     blocks_by_type = defaultdict(set)
     term_blocks = set()
 
     for v in g.vertices():
-        tipo = int(g.vp["tipo"][v])
-        bloco = int(blocks_vec[int(v)])
-        if bloco in connected_blocks:
-            blocks_by_type[tipo].add(bloco)
-            if tipo == 1:
-                term_blocks.add(bloco)
+        b = int(blocks_map[v])
+        t = int(g.vp["tipo"][v])
+        if b in connected:
+            blocks_by_type[t].add(b)
+            if t == 1:
+                term_blocks.add(b)
 
     print("\n[Depuração] Blocos conectados por tipo:")
-    for tipo, blocos in sorted(blocks_by_type.items()):
-        nome = {0: "Documento", 1: "Termo", 3: "Janela", 4: "Contexto"}.get(
-            tipo, f"Tipo {tipo}"
-        )
-        print(f"  - {nome:<10}: {len(blocos)} blocos")
+    for t, bls in sorted(blocks_by_type.items()):
+        nome = {0: "Documento", 1: "Termo", 3: "Janela", 4: "Contexto", 5: "Jan-Slide"}.get(t, f"Tipo {t}")
+        print(f"  - {nome:<10}: {len(bls)} blocos")
 
     return len(term_blocks)
+
 
 
 def word_embedding(df_docs, nlp, window_list, n_blocks=None):
@@ -56,13 +54,16 @@ def word_embedding(df_docs, nlp, window_list, n_blocks=None):
     for sbm_window in window_list:
         print(f"\n### SBM janela = {sbm_window}")
         g_full = graph_build.initialize_graph()
-        g_full = graph_build.build_window_graph(g_full, df_docs, nlp, sbm_window)
+        g_new_jan_term = graph_build.initialize_graph()
+        # g_full = graph_build.build_window_graph(g_full, df_docs, nlp, sbm_window)
+        g_full, g_new_jan_term = graph_build.build_window_graph_and_sliding(df_docs, nlp, sbm_window)
 
         g_jan_term = graph_build.extract_window_term_graph(g_full)
         g_con_jan_term = graph_build.extract_context_window_term_graph(g_jan_term)
         doc_term = graph_build.extract_doc_term_graph(g_full)
 
         state = graph_sbm.sbm(g_con_jan_term, n_blocks=n_blocks)
+        # state = graph_sbm.sbm(g_new_jan_term)
 
         if n_blocks is None:
             k_blocks = count_connected_term_blocks(state, g_con_jan_term)
@@ -73,9 +74,9 @@ def word_embedding(df_docs, nlp, window_list, n_blocks=None):
         # SBM labels
         blocks_vec = state.get_blocks().a
         term_to_block = {
-            g_jan_term.vp["name"][v]: int(blocks_vec[int(v)])
-            for v in g_jan_term.vertices()
-            if int(g_jan_term.vp["tipo"][v]) == 1
+            g_con_jan_term.vp["name"][v]: int(blocks_vec[int(v)])
+            for v in g_con_jan_term.vertices()
+            if int(g_con_jan_term.vp["tipo"][v]) == 1
         }
         sbm_term_labels[sbm_window] = term_to_block.copy()
 
@@ -109,7 +110,7 @@ def main():
     n_samples = args.samples
     fixed_seed = args.seed if args.seed is not None else int(time.time()) % 2**32
 
-    WINDOW_LIST = [10, 20]
+    WINDOW_LIST = [5, 10, 20, 40, "full"]
     OUT_PARTITIONS = BASE_DIR / "../../outputs/partitions"
 
     nlp = spacy.load("en_core_web_sm")
