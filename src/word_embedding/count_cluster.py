@@ -24,12 +24,14 @@ for sample_dir in base_path.glob("*"):
                 run = pf.stem.split("run")[1]
                 df = pd.read_parquet(pf)
                 partitions = df["label"].nunique()
-                rows.append({
-                    "model": model,
-                    "window": window,
-                    "run": run,
-                    "partitions": partitions
-                })
+                rows.append(
+                    {
+                        "model": model,
+                        "window": window,
+                        "run": run,
+                        "partitions": partitions,
+                    }
+                )
 
         if rows:
             df = pd.DataFrame(rows)
@@ -51,7 +53,7 @@ for sample_dir in base_path.glob("*"):
                 hue="model",
                 style="model",
                 alpha=0.7,
-                s=60
+                s=60,
             )
 
             # Média por modelo e janela
@@ -61,22 +63,27 @@ for sample_dir in base_path.glob("*"):
                     row["window"],
                     row["partitions"] + 0.3,
                     f'{row["partitions"]:.1f}',
-                    ha='center',
+                    ha="center",
                     fontsize=9,
-                    color='black'
+                    color="black",
                 )
 
             # Média geral por modelo
             overall_means = df.groupby("model")["partitions"].mean().reset_index()
-            colors = dict(zip(df["model"].unique(), sns.color_palette(n_colors=len(df["model"].unique()))))
+            colors = dict(
+                zip(
+                    df["model"].unique(),
+                    sns.color_palette(n_colors=len(df["model"].unique())),
+                )
+            )
 
             for _, row in overall_means.iterrows():
                 ax.axhline(
                     y=row["partitions"],
                     color=colors[row["model"]],
-                    linestyle='--',
+                    linestyle="--",
                     linewidth=1.2,
-                    alpha=0.5
+                    alpha=0.5,
                 )
                 x_middle = df["window"].unique()[len(df["window"].unique()) // 2]
 
@@ -86,11 +93,10 @@ for sample_dir in base_path.glob("*"):
                     s=f"Média geral: {round(row['partitions'])}",
                     color="black",
                     fontsize=10,
-                    ha='center',
-                    va='bottom',
-                    fontweight='bold'
+                    ha="center",
+                    va="bottom",
+                    fontweight="bold",
                 )
-
 
             plt.title(f"Número de partições — {sample_dir.name} / {seed_dir.name}")
             plt.ylabel("Número de partições")

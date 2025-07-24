@@ -2,7 +2,12 @@ from pathlib import Path
 import pandas as pd
 import argparse
 import numpy as np
-from graph_tool.all import variation_information, partition_overlap, mutual_information, reduced_mutual_information
+from graph_tool.all import (
+    variation_information,
+    partition_overlap,
+    mutual_information,
+    reduced_mutual_information,
+)
 from sklearn.metrics import adjusted_rand_score
 
 
@@ -14,14 +19,14 @@ def _window_sort_key(w):
 
 
 def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray) -> dict:
-    """ 
+    """
     Compara duas séries de rótulos de partição e retorna um dicionário de métricas.
     """
     # print(len(labels_a), len(labels_b))
     if len(labels_a) != len(labels_b):
         raise ValueError("As duas séries de rótulos devem ter o mesmo comprimento.")
     # else:
-    #     # print("  [OK] Comprimentos iguais:", len(labels_a)) 
+    #     # print("  [OK] Comprimentos iguais:", len(labels_a))
     #     continue
     return {
         "vi": variation_information(labels_a, labels_b, norm=False),
@@ -34,9 +39,8 @@ def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray) -> dict:
         "anmi": mutual_information(labels_a, labels_b, norm=True, adjusted=True),
         "ari": adjusted_rand_score(labels_a, labels_b),
         "rmi": reduced_mutual_information(labels_a, labels_b, norm=False),
-        "nrmi": reduced_mutual_information(labels_a, labels_b, norm=True)
+        "nrmi": reduced_mutual_information(labels_a, labels_b, norm=True),
     }
-
 
 
 def compute_seed(seed_dir: Path, model_x: str, model_y: str):
@@ -113,7 +117,7 @@ def compute_seed(seed_dir: Path, model_x: str, model_y: str):
                         continue
 
                     # Verifica os termos em comum entre as duas partições
-                    common = set(df_x["term"]).intersection(df_y["term"])  
+                    common = set(df_x["term"]).intersection(df_y["term"])
 
                     # Obtém os labels correspondentes aos termos em comum
                     labels_x = df_x.set_index("term").loc[list(common)]["label"].values
@@ -123,8 +127,6 @@ def compute_seed(seed_dir: Path, model_x: str, model_y: str):
                     row_data = {row_key: wx, col_key: wy}
                     row_data.update(metrics)
                     rows.append(row_data)
-
-
 
     # Se nenhuma comparação foi válida (sem termos em comum suficientes), avisa e retorna
     if not rows:
@@ -137,12 +139,8 @@ def compute_seed(seed_dir: Path, model_x: str, model_y: str):
     metric_keys = list(metrics.keys())
 
     mean_df = (
-        pd.DataFrame(rows)
-        .groupby([row_key, col_key])[metric_keys]
-        .mean()
-        .reset_index()
+        pd.DataFrame(rows).groupby([row_key, col_key])[metric_keys].mean().reset_index()
     )
-
 
     # Salva o arquivo de médias no formato Parquet
     mean_df.to_parquet(out_root / "running_mean.parquet", engine="pyarrow")
@@ -154,10 +152,11 @@ if __name__ == "__main__":
         description="Compute mean comparison metrics for SBM and W2V partitions."
     )
     parser.add_argument(
-        "--seed", "-s",
+        "--seed",
+        "-s",
         help="Nome ou número da pasta seed a processar (ex: 42 ou seed_42). "
-             "Se omitido, todas as seeds serão processadas.",
-        default=None
+        "Se omitido, todas as seeds serão processadas.",
+        default=None,
     )
     args = parser.parse_args()
 
@@ -174,13 +173,17 @@ if __name__ == "__main__":
             seeds_to_check = sorted(sample_dir.glob("seed_*"))
         else:
             # aceita "42" ou "seed_42"
-            seed_name = args.seed if str(args.seed).startswith("seed_") else f"seed_{args.seed}"
+            seed_name = (
+                args.seed if str(args.seed).startswith("seed_") else f"seed_{args.seed}"
+            )
             seeds_to_check = [sample_dir / seed_name]
 
         # ------------------------------------
         for seed_dir in seeds_to_check:
             if not seed_dir.is_dir():
-                print(f"  [WARN] Seed {seed_dir.name} não encontrada para {sample_dir.name}")
+                print(
+                    f"  [WARN] Seed {seed_dir.name} não encontrada para {sample_dir.name}"
+                )
                 continue
             print(f"  Seed: {seed_dir.name}")
             for model_x, model_y in comparisons:

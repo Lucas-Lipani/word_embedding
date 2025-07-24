@@ -58,12 +58,13 @@ def build_window_graph(g, df, nlp, w):
     ):
         doc_id = str(idx)
         # abstract = row["abstract"]
-        abstract = ("Janela de teste para analisar se está fazendo tudo certo, caso "
-        "esteja tudo certo, irei analisar o próximo.")
+        abstract = (
+            "Janela de teste para analisar se está fazendo tudo certo, caso "
+            "esteja tudo certo, irei analisar o próximo."
+        )
 
         print("Abstract")
         print(abstract)
-
 
         # ───── vértice Documento ─────
         v_doc = g.add_vertex()
@@ -191,9 +192,7 @@ def build_window_graph_and_sliding(df, nlp, w):
 
         doc = nlp(abstract)
         tokens = [
-            t.text.lower().strip()
-            for t in doc
-            if not t.is_stop and not t.is_punct
+            t.text.lower().strip() for t in doc if not t.is_stop and not t.is_punct
         ]
 
         # Tamanho local da janela
@@ -211,7 +210,7 @@ def build_window_graph_and_sliding(df, nlp, w):
         for i, term_central in enumerate(tokens):
             # --------- g_full: JANELA (tipo 3) → termo central/contexto ---------
             start, end = max(0, i - w_local), min(len(tokens), i + w_local + 1)
-            win_tokens = tokens[start:i] + tokens[i + 1:end]
+            win_tokens = tokens[start:i] + tokens[i + 1 : end]
             win_key = (frozenset(win_tokens), term_central)
 
             if win_key not in window_vertex_full:
