@@ -1,4 +1,4 @@
-*.parquet
+wos_sts_journals.parquet.parquet
 
 /Basic_Tests
 

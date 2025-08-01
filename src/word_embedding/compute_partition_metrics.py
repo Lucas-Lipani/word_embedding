@@ -116,12 +116,17 @@ def compute_seed(seed_dir: Path, model_x: str, model_y: str):
                     if df_y.empty:
                         continue
 
-                    # Verifica os termos em comum entre as duas partições
-                    common = set(df_x["term"]).intersection(df_y["term"])
+                    # # Verifica os termos em comum entre as duas partições
+                    # common = set(df_x["term"]).intersection(df_y["term"])
 
-                    # Obtém os labels correspondentes aos termos em comum
-                    labels_x = df_x.set_index("term").loc[list(common)]["label"].values
-                    labels_y = df_y.set_index("term").loc[list(common)]["label"].values
+                    # # Obtém os labels correspondentes aos termos em comum
+                    # labels_x = df_x.set_index("term").loc[list(common)]["label"].values
+                    # labels_y = df_y.set_index("term").loc[list(common)]["label"].values
+
+                    common = sorted(set(df_x["term"]).intersection(df_y["term"]))
+                    labels_x = df_x.set_index("term").loc[common]["label"].values
+                    labels_y = df_y.set_index("term").loc[common]["label"].values
+
 
                     metrics = _compare_metrics(labels_x, labels_y)
                     row_data = {row_key: wx, col_key: wy}
