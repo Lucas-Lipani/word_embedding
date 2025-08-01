@@ -48,6 +48,26 @@ def count_connected_term_blocks(state, g):
     return len(term_blocks)
 
 
+def tokenize_abstracts(df, nlp):
+    """
+    Adiciona uma coluna 'tokens' ao DataFrame com a lista de tokens tratados.
+    """
+    print(f"Tokenizando {len(df)} abstracts com spaCy...")
+    tokens_all = []
+    for abstract in df["abstract"]:
+        doc = nlp(abstract)
+        tokens = [
+            token.text.lower().strip()
+            for token in doc
+            if not token.is_stop and not token.is_punct
+        ]
+        tokens_all.append(tokens)
+
+    df = df.copy()
+    df["tokens"] = tokens_all
+    return df
+
+
 def word_embedding(df_docs, nlp, window_list, n_blocks=None):
     w2v_models = {
         w: w2vec_kmeans.get_or_train_w2v_model({}, w, df_docs, nlp) for w in window_list
@@ -65,16 +85,16 @@ def word_embedding(df_docs, nlp, window_list, n_blocks=None):
             df_docs, nlp, sbm_window
         )
 
-        g_jan_term = graph_build.extract_window_term_graph(g_full)
-        g_con_jan_term = graph_build.extract_context_window_term_graph(g_jan_term)
         doc_term = graph_build.extract_doc_term_graph(g_full)
 
+        # g_jan_term = graph_build.extract_window_term_graph(g_full)
+        # g_con_jan_term = graph_build.extract_context_window_term_graph(g_jan_term)
         # g_sbm_input = g_con_jan_term
         # state = graph_sbm.sbm(g_con_jan_term, n_blocks=n_blocks)
 
         # g_sbm_input = g_con_jan_term
         # state = graph_sbm.sbm_with_fixed_term_blocks(g_con_jan_term, n_blocks)
-        
+
         g_sbm_input = g_new_jan_term
         state = graph_sbm.sbm(g_sbm_input)
 
@@ -92,7 +112,9 @@ def word_embedding(df_docs, nlp, window_list, n_blocks=None):
             g_sbm_input.vp["name"][v]: int(blocks_vec[int(v)])
             for v in g_sbm_input.vertices()
             if int(g_sbm_input.vp["tipo"][v]) == 1
+            and (v.in_degree() + v.out_degree() > 0)
         }
+
         sbm_term_labels[sbm_window] = term_to_block.copy()
 
         # W2V clustering
@@ -134,12 +156,14 @@ def main():
     n_samples = args.samples
     fixed_seed = args.seed if args.seed is not None else int(time.time()) % 2**32
 
-    WINDOW_LIST = [5, 40, "full"]
+    WINDOW_LIST = [5, 10, 20, 40, 50, "full"]
+    # WINDOW_LIST = ["full"]
     OUT_PARTITIONS = BASE_DIR / "../../outputs/partitions"
 
     nlp = spacy.load("en_core_web_sm")
     df_full = pd.read_parquet("../wos_sts_journals.parquet")
     df_docs = df_full.sample(n=n_samples, random_state=fixed_seed)
+    df_docs = tokenize_abstracts(df_docs, nlp)
 
     for r in range(n_runs):
         print(f"\n=== Execução {r+1}/{n_runs} ===")

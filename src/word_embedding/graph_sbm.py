@@ -1,4 +1,4 @@
-from graph_tool.all import minimize_blockmodel_dl, LayeredBlockState
+from graph_tool.all import minimize_blockmodel_dl, LayeredBlockState, BlockState
 import numpy as np
 
 
@@ -43,8 +43,6 @@ def sbm_with_fixed_term_blocks(g, n_term_blocks, init_method="random"):
     Roda SBM no grafo g, fixando que os vértices tipo TERMO (tipo=1) fiquem em
     exatamente n_term_blocks blocos. Os demais vértices permanecem livres.
     """
-    from graph_tool.all import BlockState
-    import numpy as np
 
     b_init = g.new_vertex_property("int")
     clabel = g.new_vertex_property("int")

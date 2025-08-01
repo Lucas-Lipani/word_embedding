@@ -20,19 +20,8 @@ def train_word2vec(df, nlp, window):
     print(
         f"\nIniciando treinamento do modelo Word2Vec com janela de contexto = {window}"
     )
-    print(f"Tokenizando e limpando {len(df)} abstracts...")
 
-    sentences = []
-    for abstract in tqdm(df["abstract"], desc="Pré-processando textos"):
-        doc = nlp(abstract)
-        tokens = [
-            token.text.lower().strip()
-            for token in doc
-            if not token.is_stop and not token.is_punct
-        ]
-        sentences.append(tokens)
-
-    print("Tokenização concluída. Iniciando o treinamento do modelo Word2Vec...")
+    sentences = df["tokens"].tolist()
 
     model = Word2Vec(
         sentences,
