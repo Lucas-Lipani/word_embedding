@@ -270,8 +270,8 @@ def build_window_graph_and_sliding(df, nlp, w):
             end = min(len(tokens), i + half_w + 1)
             slide_tokens = tokens[start:end]
 
-            if len(slide_tokens) < w_local:
-                continue  # ignorar janelas incompletas nas bordas
+            # if len(slide_tokens) < w_local:
+            #     continue  # ignorar janelas incompletas nas bordas
 
             slide_key = " ".join(slide_tokens)
             if slide_key not in window_vertex_slide:

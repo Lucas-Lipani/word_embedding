@@ -1,4 +1,5 @@
 from pathlib import Path
+import argparse
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -61,11 +62,24 @@ def plot_mean_heatmap(parquet_file: Path, metric: str, n_samples: str):
     plt.close()
     print(f"Heatmap salvo: {out_png}")
 
+def main():
+    parser = argparse.ArgumentParser(
+        description="Gera os heatmaps médios de métricas."
+    )
+    parser.add_argument(
+        "--seed",
+        type=str,            # ou int, se preferir
+        help="processa apenas o diretório seed_X informado (ex.: 1754340049)",
+    )
+    parser.add_argument(
+        "--base",
+        type=Path,
+        default=Path("../outputs/partitions"),
+        help="raiz das saídas de partição",
+    )
+    args = parser.parse_args()
 
-if __name__ == "__main__":
-    base = Path("../outputs/partitions")
-
-    for sample_dir in sorted(base.glob("*")):
+    for sample_dir in sorted(args.base.glob("*")):
         if not sample_dir.is_dir():
             continue
         n_samples = sample_dir.name
@@ -74,23 +88,23 @@ if __name__ == "__main__":
         for seed_dir in sorted(sample_dir.glob("seed_*")):
             if not seed_dir.is_dir():
                 continue
+
+            # --- filtro pelo argumento --seed -----------------
+            if args.seed and seed_dir.name != f"seed_{args.seed}":
+                continue
+            # --------------------------------------------------
+
             print(f"  Seed: {seed_dir.name}")
 
-            for parquet_file in seed_dir.glob("analysis/*/running_mean.parquet"):
-                df_preview = pd.read_parquet(parquet_file, columns=None)
-                metric_candidates = set(df_preview.columns) - {
-                    "run",
-                    "window",
-                    "model",
-                    "term",
-                    "label",
-                    "w2v_col_window",
-                    "w2v_row_window",
-                    "w2v_window",
-                    "sbm_window",
-                    "sbm_row_window",
-                    "sbm_col_window",
+            for pq in seed_dir.glob("analysis/*/running_mean.parquet"):
+                df_prev = pd.read_parquet(pq, columns=None)
+                metrics = set(df_prev.columns) - {
+                    "run", "window", "model", "term", "label",
+                    "w2v_col_window", "w2v_row_window", "w2v_window",
+                    "sbm_window", "sbm_row_window", "sbm_col_window",
                 }
-                # Remove também row_key e col_key se quiser
-                for met in metric_candidates:
-                    plot_mean_heatmap(parquet_file, met, n_samples)
+                for met in metrics:
+                    plot_mean_heatmap(pq, met, n_samples)
+
+if __name__ == "__main__":
+    main()

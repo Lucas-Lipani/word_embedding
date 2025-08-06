@@ -81,9 +81,12 @@ def word_embedding(df_docs, nlp, window_list, n_blocks=None):
         g_full = graph_build.initialize_graph()
         g_new_jan_term = graph_build.initialize_graph()
         # g_full = graph_build.build_window_graph(g_full, df_docs, nlp, sbm_window)
+
         g_full, g_new_jan_term = graph_build.build_window_graph_and_sliding(
             df_docs, nlp, sbm_window
         )
+        g_sbm_input = g_new_jan_term
+        state = graph_sbm.sbm(g_sbm_input, n_blocks = n_blocks)
 
         doc_term = graph_build.extract_doc_term_graph(g_full)
 
@@ -95,10 +98,9 @@ def word_embedding(df_docs, nlp, window_list, n_blocks=None):
         # g_sbm_input = g_con_jan_term
         # state = graph_sbm.sbm_with_fixed_term_blocks(g_con_jan_term, n_blocks)
 
-        g_sbm_input = g_new_jan_term
-        state = graph_sbm.sbm(g_sbm_input)
 
         k_blocks = count_connected_term_blocks(state, g_sbm_input)
+        print("blocos de termos:", k_blocks)
 
         # if n_blocks is None:
         #     k_blocks = count_connected_term_blocks(state, g_con_jan_term)
@@ -156,7 +158,7 @@ def main():
     n_samples = args.samples
     fixed_seed = args.seed if args.seed is not None else int(time.time()) % 2**32
 
-    WINDOW_LIST = [5, 10, 20, 40, 50, "full"]
+    WINDOW_LIST = [5, 10, 20, 40, 50, "full"]  # Janelas para SBM e W2V
     # WINDOW_LIST = ["full"]
     OUT_PARTITIONS = BASE_DIR / "../../outputs/partitions"
 

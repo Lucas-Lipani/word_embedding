@@ -16,7 +16,9 @@ def sbm(g, layered=False, n_blocks=None):
 
         # Chamada do modelo SBM
         state = minimize_blockmodel_dl(
-            g, state_args=state_args, multilevel_mcmc_args=mcmc_args
+            g, 
+            state_args=state_args, 
+            multilevel_mcmc_args=mcmc_args
         )
 
     else:
