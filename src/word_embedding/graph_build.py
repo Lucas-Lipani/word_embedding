@@ -25,6 +25,9 @@ def initialize_graph():
     weight_prop = g.new_edge_property("long")
     layer_prop = g.new_edge_property("int")
 
+    # >>> NOVO: doc_id disponível para qualquer grafo que precise
+    doc_id_prop = g.new_vertex_property("string")
+
     g.vp["amount"] = amount_prop
     g.ep["layer"] = layer_prop
     g.vp["size"] = size_prop
@@ -33,6 +36,7 @@ def initialize_graph():
     g.vp["tipo"] = tipo_prop
     g.vp["short_term"] = short_term_prop
     g.vp["posicao"] = posicao_prop
+    g.vp["doc_id"] = doc_id_prop  # <<< NOVO
     g.ep["weight"] = weight_prop
 
     return g
@@ -57,10 +61,14 @@ def build_window_graph(g, df, nlp, w):
         df.iterrows(), desc="Processando Doc-Jan-Termos", total=len(df)
     ):
         doc_id = str(idx)
-        # abstract = (
-        #     "Janela de teste para analisar se está fazendo tudo certo, caso "
-        #     "esteja tudo certo, irei analisar o próximo."
-        # )
+        # abstract = row["abstract"]
+        abstract = (
+            "Janela de teste para analisar se está fazendo tudo certo, caso "
+            "esteja tudo certo, irei analisar o próximo."
+        )
+
+        print("Abstract")
+        print(abstract)
 
         # ───── vértice Documento ─────
         v_doc = g.add_vertex()
@@ -68,10 +76,15 @@ def build_window_graph(g, df, nlp, w):
         g.vp["posicao"][v_doc] = [-15, doc_y]
         doc_y += 1
         g.vp["size"][v_doc], g.vp["color"][v_doc] = 20, [1, 0, 0, 1]
+        g.vp["doc_id"][v_doc] = doc_id  # útil caso precise
         doc_vertex[doc_id] = v_doc
 
         # tokenização
-        toks = row["tokens"]
+        toks = [
+            t.text.lower().strip()
+            for t in nlp(abstract)
+            if not t.is_stop and not t.is_punct
+        ]
 
         #  tamanho da janela de contexto
         if w == "full":
@@ -118,7 +131,7 @@ def build_window_graph(g, df, nlp, w):
                 v_term = term_vertex[term_central]
                 g.vp["amount"][v_term] += 1
 
-            # ╭─────────── camada 0: Jan → Termo central ───────────╮
+            # camada 0: Jan → Termo central
             e0 = g.edge(v_win, v_term)
             if e0 is None:
                 e0 = g.add_edge(v_win, v_term)
@@ -126,9 +139,8 @@ def build_window_graph(g, df, nlp, w):
                 g.ep["layer"][e0] = 0
             else:
                 g.ep["weight"][e0] += 1
-            # ╰──────────────────────────────────────────────────────╯
 
-            # ╭─────────── camada 1: Jan → cada termo de contexto ───╮
+            # camada 1: Jan → cada termo de contexto
             for tok in win_tokens:
                 if tok not in term_vertex:
                     v_tok = g.add_vertex()
@@ -151,7 +163,6 @@ def build_window_graph(g, df, nlp, w):
                     g.ep["layer"][e1] = 1
                 else:
                     g.ep["weight"][e1] += 1
-            # ╰──────────────────────────────────────────────────────╯
 
     return g
 
@@ -179,10 +190,15 @@ def build_window_graph_and_sliding(df, nlp, w):
     for idx, row in tqdm(df.iterrows(), desc="Processando documentos", total=len(df)):
         doc_id = str(idx)
         # abstract = row["abstract"]
-        # abstract = ("Janela de teste para analisar se está fazendo tudo certo, caso "
-        # "esteja tudo certo, irei analisar o próximo.")
+        # abstract = (
+        #     "Janela de teste para analisar se está fazendo tudo certo, caso "
+        #     "esteja tudo certo, irei analisar o próximo."
+        # )
 
-        # tokenização
+        # doc = nlp(abstract)
+        # tokens = [
+        #     t.text.lower().strip() for t in doc if not t.is_stop and not t.is_punct
+        # ]
         tokens = row["tokens"]
 
         # Tamanho local da janela
@@ -194,6 +210,7 @@ def build_window_graph_and_sliding(df, nlp, w):
         g_full.vp["name"][v_doc], g_full.vp["tipo"][v_doc] = doc_id, 0
         g_full.vp["posicao"][v_doc] = [-15, doc_y]
         g_full.vp["size"][v_doc], g_full.vp["color"][v_doc] = 20, [1, 0, 0, 1]
+        g_full.vp["doc_id"][v_doc] = doc_id
         doc_y += 1
         doc_vertex[doc_id] = v_doc
 
@@ -264,30 +281,58 @@ def build_window_graph_and_sliding(df, nlp, w):
                 else:
                     g_full.ep["weight"][e1] += 1
 
-        # --------- g_slide: janela deslizante (tipo 5) com termo central incluído ---------
-        for i in range(len(tokens)):
-            start = max(0, i - half_w)
-            end = min(len(tokens), i + half_w + 1)
-            slide_tokens = tokens[start:end]
+        # --------- g_slide: janelas deslizantes por SEQUÊNCIA (ordem preservada), fundidas GLOBALMENTE ---------
+        w_local = len(tokens) if w == "full" else int(w)
 
-            # if len(slide_tokens) < w_local:
-            #     continue  # ignorar janelas incompletas nas bordas
+        # garanta as props (faça isso uma única vez; aqui já funciona porque é antes de criar os vértices da janela)
+        if "occurs_total" not in g_slide.vp:
+            g_slide.vp["occurs_total"] = g_slide.new_vertex_property("int")
+        if "docs" not in g_slide.vp:
+            g_slide.vp["docs"] = g_slide.new_vertex_property("object")  # set de doc_ids
+        if "occurs_by_doc" not in g_slide.vp:
+            g_slide.vp["occurs_by_doc"] = g_slide.new_vertex_property(
+                "object"
+            )  # dict {doc_id: cont}
 
-            slide_key = " ".join(slide_tokens)
-            if slide_key not in window_vertex_slide:
+        # desliza com passo 1 e tamanho fixo
+        for start in range(0, len(tokens) - w_local + 1):
+            end = start + w_local
+            seq = tuple(tokens[start:end])  # ordem preservada
+            seq_key = seq  # <— CHAVE GLOBAL (sem doc_id!)
+
+            v_slide = window_vertex_slide.get(seq_key)
+            created = False
+            if v_slide is None:
+                # cria UMA VEZ para esta sequência (globalmente)
                 v_slide = g_slide.add_vertex()
-                g_slide.vp["name"][v_slide] = slide_key
+                g_slide.vp["name"][v_slide] = " ".join(seq)
                 g_slide.vp["tipo"][v_slide] = 5
                 g_slide.vp["posicao"][v_slide] = [0, slide_y]
                 g_slide.vp["size"][v_slide] = 12
                 g_slide.vp["color"][v_slide] = [0.6, 0.6, 0.0, 1]
-                window_vertex_slide[slide_key] = v_slide
+                g_slide.vp["termos"][v_slide] = list(seq)
+                g_slide.vp["occurs_total"][v_slide] = 0
+                g_slide.vp["docs"][v_slide] = set()
+                g_slide.vp["occurs_by_doc"][v_slide] = {}
+                window_vertex_slide[seq_key] = v_slide
                 slide_y += 1
-            else:
-                v_slide = window_vertex_slide[slide_key]
+                created = True
 
-            for tok in slide_tokens:
-                if tok not in term_vertex_slide:
+            # atualiza contadores globais/por-doc
+            g_slide.vp["occurs_total"][v_slide] += 1
+            docs_set = g_slide.vp["docs"][v_slide]
+            docs_set.add(doc_id)
+            g_slide.vp["docs"][v_slide] = docs_set  # reatribui por segurança
+
+            ob = g_slide.vp["occurs_by_doc"][v_slide]
+            ob[doc_id] = ob.get(doc_id, 0) + 1
+            g_slide.vp["occurs_by_doc"][v_slide] = ob
+
+            # acumula pesos das arestas janela→termo
+            freq = Counter(seq)
+            for tok, c in freq.items():
+                v_tok = term_vertex_slide.get(tok)
+                if v_tok is None:
                     v_tok = g_slide.add_vertex()
                     g_slide.vp["name"][v_tok] = tok
                     g_slide.vp["tipo"][v_tok] = 1
@@ -296,14 +341,15 @@ def build_window_graph_and_sliding(df, nlp, w):
                     g_slide.vp["color"][v_tok] = [0, 0, 1, 1]
                     term_vertex_slide[tok] = v_tok
                     slide_term_y += 1
-                v_tok = term_vertex_slide[tok]
                 e = g_slide.edge(v_slide, v_tok)
                 if e is None:
                     e = g_slide.add_edge(v_slide, v_tok)
                     g_slide.ep["layer"][e] = 0
-                    g_slide.ep["weight"][e] = 1
+                    g_slide.ep["weight"][e] = c  # primeira vez dessa janela global
                 else:
-                    g_slide.ep["weight"][e] += 1
+                    g_slide.ep["weight"][
+                        e
+                    ] += c  # janela repetiu (outro start/mesmo doc ou outro doc)
 
     return g_full, g_slide
 

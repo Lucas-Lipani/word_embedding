@@ -52,6 +52,15 @@ def plot_mean_heatmap(parquet_file: Path, metric: str, n_samples: str):
         cbar=True,
     )
 
+    ax = plt.gca()
+    nrows, ncols = pivot.shape
+    n = min(nrows, ncols)
+    for i in range(n):
+        # corrigindo pelo eixo y invertido
+        ax.add_patch(
+            plt.Rectangle((i, nrows - 1 - i), 1, 1, fill=False, edgecolor="red", lw=2)
+        )
+
     plt.title(f"Mean {metric.upper()} — {n_samples} samples")
     plt.ylabel(f"{model_x.upper()} window")
     plt.xlabel(f"{model_y.upper()} window")
@@ -62,13 +71,12 @@ def plot_mean_heatmap(parquet_file: Path, metric: str, n_samples: str):
     plt.close()
     print(f"Heatmap salvo: {out_png}")
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Gera os heatmaps médios de métricas."
-    )
+    parser = argparse.ArgumentParser(description="Gera os heatmaps médios de métricas.")
     parser.add_argument(
         "--seed",
-        type=str,            # ou int, se preferir
+        type=str,  # ou int, se preferir
         help="processa apenas o diretório seed_X informado (ex.: 1754340049)",
     )
     parser.add_argument(
@@ -99,12 +107,21 @@ def main():
             for pq in seed_dir.glob("analysis/*/running_mean.parquet"):
                 df_prev = pd.read_parquet(pq, columns=None)
                 metrics = set(df_prev.columns) - {
-                    "run", "window", "model", "term", "label",
-                    "w2v_col_window", "w2v_row_window", "w2v_window",
-                    "sbm_window", "sbm_row_window", "sbm_col_window",
+                    "run",
+                    "window",
+                    "model",
+                    "term",
+                    "label",
+                    "w2v_col_window",
+                    "w2v_row_window",
+                    "w2v_window",
+                    "sbm_window",
+                    "sbm_row_window",
+                    "sbm_col_window",
                 }
                 for met in metrics:
                     plot_mean_heatmap(pq, met, n_samples)
+
 
 if __name__ == "__main__":
     main()
