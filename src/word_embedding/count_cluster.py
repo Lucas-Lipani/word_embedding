@@ -21,6 +21,10 @@ def parse_args():
     return ap.parse_args()
 
 
+def _window_sort_key(w):
+    return float("inf") if w == "full" else int(w)
+
+
 def main():
     args = parse_args()
     base_path = Path("../outputs/partitions")
@@ -108,10 +112,20 @@ def main():
 
         # === Gráfico (agregado por modelo/janela, independente do tipo) ===
         plt.figure(figsize=(10, 6))
+
+        plot_df = (
+            out_df.groupby(["model", "window", "run"], as_index=False)["partitions"].sum()
+        )
+
+        # Corrige a ordem do eixo x
+        plot_df["window"] = pd.Categorical(
+            plot_df["window"],
+            sorted(plot_df["window"].unique(), key=_window_sort_key),
+            ordered=True,
+        )
+
         ax = sns.scatterplot(
-            data=out_df.groupby(["model", "window", "run"], as_index=False)[
-                "partitions"
-            ].sum(),
+            data=plot_df,
             x="window",
             y="partitions",
             hue="model",
