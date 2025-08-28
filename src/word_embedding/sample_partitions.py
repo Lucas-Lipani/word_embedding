@@ -1,158 +1,83 @@
+#!/usr/bin/env python3
+# sample_partitions.py — simplified for fixed schema:
+# ['window','model','vertex','tipo','label','doc_id','term','label_members']
+
 import argparse
 import sys
 import random
-import pandas as pd
 from pathlib import Path
-
-
-def detect_col(df, candidates):
-    """Return the first existing column name among candidates, or None."""
-    for c in candidates:
-        if c in df.columns:
-            return c
-    return None
-
+import pandas as pd
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Print N random SBM partitions (terms) from project outputs."
-    )
-    parser.add_argument(
-        "--samples", type=str, required=True, help="Sample size (e.g. 1200)"
-    )
-    parser.add_argument(
-        "--seed",
-        type=str,
-        required=True,
-        help="Seed identifier (e.g. 1755724084)",
-    )
-    parser.add_argument(
-        "--run", type=int, required=True, help="Run number (e.g. 1)"
-    )
-    parser.add_argument(
-        "--model", default="sbm", help="Model to filter (default: sbm)"
-    )
-    parser.add_argument(
-        "--window",
-        required=True,
-        help="Window size to filter (e.g., 5, 10, full)",
-    )
-
-    parser.add_argument(
-        "--partition",
-        type=int,
-        help="Specific partition label to print (overrides random sampling).",
-    )
-
-    parser.add_argument(
-        "--n-groups",
-        type=int,
-        default=5,
-        help="How many random partitions to print (default: 5).",
-    )
-    parser.add_argument(
-        "--random-seed",
-        type=int,
-        help="Set RNG seed for reproducibility (optional).",
-    )
-
-    args = parser.parse_args()
+    ap = argparse.ArgumentParser(description="Print partitions (terms) from a stored run.")
+    ap.add_argument("--samples", required=True)
+    ap.add_argument("--seed", required=True)
+    ap.add_argument("--run", type=int, required=True)
+    ap.add_argument("--model", default="sbm", choices=["sbm", "w2v"])
+    ap.add_argument("--window", required=True)  # e.g. 5, 30, full
+    ap.add_argument("--partition", type=str, help="single or comma-separated labels, e.g. 41 or 41,794")
+    ap.add_argument("--n-groups", type=int, default=5)
+    ap.add_argument("--random-seed", type=int)
+    args = ap.parse_args()
 
     if args.random_seed is not None:
         random.seed(args.random_seed)
 
-    # Constroi o caminho do arquivo parquet
+    # Build parquet path
     base = Path("../outputs/partitions")
-    seed_dir = (
-        base
-        / str(args.samples)
-        / f"seed_{args.seed}"
-        / f"{args.model}_J{args.window}"
-    )
-    parquet_file = seed_dir / f"partitions_run{args.run:03d}.parquet"
-
-    if not parquet_file.exists():
-        print(f"[ERROR] File not found: {parquet_file}", file=sys.stderr)
+    d = base / str(args.samples) / f"seed_{args.seed}" / f"{args.model}_J{args.window}"
+    f = d / f"partitions_run{args.run:03d}.parquet"
+    if not f.exists():
+        print(f"[ERROR] Not found: {f}", file=sys.stderr)
         sys.exit(1)
 
-    try:
-        df = pd.read_parquet(parquet_file)
-    except Exception as e:
-        print(f"Error reading parquet: {e}", file=sys.stderr)
-        sys.exit(1)
+    # Load parquet (fixed schema)
+    df = pd.read_parquet(f)
 
-    # Detecção de colunas
-    col_model = detect_col(df, ["model"])
-    col_window = detect_col(df, ["window"])
-    col_tipo = detect_col(df, ["tipo", "type"])
-    col_term = detect_col(df, ["term", "token", "word"])
-    col_label = detect_col(df, ["label", "partition", "block"])
-
-    needed = [col_model, col_window, col_tipo, col_term, col_label]
-    if any(c is None for c in needed):
-        print("Parquet is missing required columns", file=sys.stderr)
-        sys.exit(1)
-
-    # Filtra por modelo + janela
-    data = df.copy()
-    data = data[data[col_model] == args.model]
-    data = data[data[col_window].astype(str) == str(args.window)]
-
+    # Filter by model + window
+    data = df[(df["model"] == args.model) & (df["window"].astype(str) == str(args.window))]
     if data.empty:
-        print("No rows after filters.", file=sys.stderr)
-        sys.exit(1)
+        print("No rows after filters.", file=sys.stderr); sys.exit(1)
 
-    # Mantém apenas vértices do tipo termo (tipo == 1)
-    term_mask = data[col_tipo] == 1
-    if data[col_tipo].dtype == object:
-        term_mask = data[col_tipo].astype(str) == "1"
-
-    terms_df = data[term_mask & data[col_term].notna()].copy()
+    # Keep only term vertices (tipo == 1)
+    terms_df = data[(data["tipo"] == 1) & (data["term"].notna())].copy()
     if terms_df.empty:
-        print("No term vertices found.", file=sys.stderr)
-        sys.exit(1)
+        print("No term vertices found.", file=sys.stderr); sys.exit(1)
 
-    # Constroi o mapeamento partição -> termos
+    # label -> sorted unique terms
     groups = (
-        terms_df.groupby(col_label)[col_term]
+        terms_df.groupby("label")["term"]
         .apply(lambda s: sorted(set(map(str, s))))
         .to_dict()
     )
-
     if not groups:
-        print("No partitions found.", file=sys.stderr)
-        sys.exit(1)
+        print("No partitions found.", file=sys.stderr); sys.exit(1)
 
-    # Se uma partição específica for solicitada, mostre apenas essa
-    if args.partition is not None:
-        lbl = args.partition
-        if lbl not in groups:
-            keys_as_int = {
-                int(k): k for k in groups.keys() if str(k).isdigit()
-            }
-            key = keys_as_int.get(lbl, None)
-            if key is None:
-                print(f"Partition {lbl} not found.", file=sys.stderr)
-                sys.exit(1)
-            lbl = key
-        selected = {lbl: groups[lbl]}
+    # Selection: specific partitions or random N
+    if args.partition:
+        wanted = []
+        for tok in args.partition.split(","):
+            tok = tok.strip()
+            try:
+                wanted.append(int(tok))
+            except ValueError:
+                print(f"[WARN] ignoring non-integer label '{tok}'", file=sys.stderr)
+        selected = {lbl: groups[lbl] for lbl in wanted if lbl in groups}
+        missing = [lbl for lbl in wanted if lbl not in groups]
+        if missing:
+            print(f"[WARN] Missing partitions: {missing}", file=sys.stderr)
+        if not selected:
+            print("No requested partitions found.", file=sys.stderr); sys.exit(1)
     else:
         labels = list(groups.keys())
         k = min(args.n_groups, len(labels))
-        selected_labels = random.sample(labels, k)
-        selected = {lbl: groups[lbl] for lbl in selected_labels}
+        selected = {lbl: groups[lbl] for lbl in random.sample(labels, k)}
 
-    # Print saída no terminal
-    print(
-        f"=== MODEL: {args.model} | WINDOW: {args.window} | SAMPLES: {args.samples} | SEED: {args.seed} | RUN: {args.run} ==="
-    )
-
-    for lbl, terms in sorted(
-        selected.items(), key=lambda x: (len(x[1]) * -1, x[0])
-    ):
+    # Print results
+    print(f"=== MODEL: {args.model} | WINDOW: {args.window} | SAMPLES: {args.samples} | SEED: {args.seed} | RUN: {args.run} ===")
+    for lbl, terms in sorted(selected.items(), key=lambda x: (-len(x[1]), x[0])):
         print(f"\nPartition label: {lbl}  |  #terms: {len(terms)}")
         print(", ".join(terms))
-
 
 if __name__ == "__main__":
     main()
