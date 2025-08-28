@@ -115,7 +115,7 @@ def compute_seed(seed_dir: Path, model_x: str, model_y: str):
                     if df_y.empty:
                         continue
 
-                    # >>> MÉTRICAS APENAS SOBRE TERMOS (tipo==1) E term NÃO-NULO
+                    # >>> MÉTRICAS APENAS SOBRE TERMOS (tipo==1) E NÃO-NULO
                     df_x_terms = df_x[
                         (df_x["tipo"] == 1) & (df_x["term"].notna())
                     ]
