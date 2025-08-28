@@ -11,7 +11,9 @@ def parse_args():
         description="Conta nº de partições por run/janela (por tipo) e salva CSV/plot."
     )
     ap.add_argument(
-        "--seed", required=True, help="Seed alvo. Aceita '1234' ou 'seed_1234'."
+        "--seed",
+        required=True,
+        help="Seed alvo. Aceita '1234' ou 'seed_1234'.",
     )
     ap.add_argument(
         "--samples",
@@ -33,10 +35,16 @@ def main():
     sample_dirs = (
         [base_path / args.samples]
         if args.samples
-        else sorted([d for d in base_path.glob("*") if d.is_dir() and d.name.isdigit()])
+        else sorted(
+            [d for d in base_path.glob("*") if d.is_dir() and d.name.isdigit()]
+        )
     )
 
-    seed_name = args.seed if str(args.seed).startswith("seed_") else f"seed_{args.seed}"
+    seed_name = (
+        args.seed
+        if str(args.seed).startswith("seed_")
+        else f"seed_{args.seed}"
+    )
 
     for sample_dir in sample_dirs:
         if not sample_dir.is_dir():
@@ -45,7 +53,9 @@ def main():
 
         seed_dir = sample_dir / seed_name
         if not seed_dir.is_dir():
-            print(f"  [WARN] Seed {seed_dir.name} não encontrada em {sample_dir.name}")
+            print(
+                f"  [WARN] Seed {seed_dir.name} não encontrada em {sample_dir.name}"
+            )
             continue
 
         print(f"  Seed: {seed_dir.name}")
@@ -67,9 +77,9 @@ def main():
 
                 # Garante tipos consistentes
                 if "label" in df.columns:
-                    df["label"] = pd.to_numeric(df["label"], errors="coerce").astype(
-                        "Int64"
-                    )
+                    df["label"] = pd.to_numeric(
+                        df["label"], errors="coerce"
+                    ).astype("Int64")
 
                 # Contagem de partições por TIPO
                 if "tipo" in df.columns:
@@ -102,7 +112,9 @@ def main():
             print(f"  Nenhum dado encontrado para {seed_dir}")
             continue
 
-        out_df = pd.DataFrame(rows).sort_values(["model", "window", "run", "tipo"])
+        out_df = pd.DataFrame(rows).sort_values(
+            ["model", "window", "run", "tipo"]
+        )
         analysis_dir = seed_dir / "analysis"
         analysis_dir.mkdir(parents=True, exist_ok=True)
 
@@ -113,9 +125,9 @@ def main():
         # === Gráfico (agregado por modelo/janela, independente do tipo) ===
         plt.figure(figsize=(10, 6))
 
-        plot_df = (
-            out_df.groupby(["model", "window", "run"], as_index=False)["partitions"].sum()
-        )
+        plot_df = out_df.groupby(["model", "window", "run"], as_index=False)[
+            "partitions"
+        ].sum()
 
         # Corrige a ordem do eixo x
         plot_df["window"] = pd.Categorical(
@@ -135,7 +147,11 @@ def main():
         )
 
         # Médias por modelo/janela
-        mean_df = out_df.groupby(["model", "window"])["partitions"].mean().reset_index()
+        mean_df = (
+            out_df.groupby(["model", "window"])["partitions"]
+            .mean()
+            .reset_index()
+        )
         for _, row in mean_df.iterrows():
             ax.text(
                 row["window"],

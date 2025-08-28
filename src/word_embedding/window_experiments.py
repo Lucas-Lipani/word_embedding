@@ -24,7 +24,9 @@ def count_connected_term_blocks(state, g, seed=None):
     """
     blocks_map = state.get_blocks()
     connected = {
-        int(blocks_map[v]) for v in g.vertices() if v.out_degree() + v.in_degree() > 0
+        int(blocks_map[v])
+        for v in g.vertices()
+        if v.out_degree() + v.in_degree() > 0
     }
 
     blocks_by_type = defaultdict(set)
@@ -84,7 +86,8 @@ def word_embedding(df_docs, nlp, window_list, n_blocks=None, fixed_seed=None):
     """
     # Treina (ou carrega) W2V por janela
     w2v_models = {
-        w: w2vec_kmeans.get_or_train_w2v_model({}, w, df_docs, nlp) for w in window_list
+        w: w2vec_kmeans.get_or_train_w2v_model({}, w, df_docs, nlp)
+        for w in window_list
     }
 
     for sbm_window in window_list:
@@ -99,7 +102,9 @@ def word_embedding(df_docs, nlp, window_list, n_blocks=None, fixed_seed=None):
         state = graph_sbm.sbm(g_sbm_input, n_blocks=n_blocks)
 
         # Info de conectividade p/ escolher k de W2V
-        k_blocks = count_connected_term_blocks(state, g_sbm_input, seed=fixed_seed)
+        k_blocks = count_connected_term_blocks(
+            state, g_sbm_input, seed=fixed_seed
+        )
 
         # ====== Extrai labels do SBM no grafo de entrada (Termos e Janelas) ======
         blocks_vec = state.get_blocks().a
@@ -129,7 +134,10 @@ def word_embedding(df_docs, nlp, window_list, n_blocks=None, fixed_seed=None):
 
             elif t == 5:
                 # Janelas: adicionar membros (lista de termos) em 'label_members'
-                if "win_terms" in g_sbm_input.vp and g_sbm_input.vp["win_terms"][v]:
+                if (
+                    "win_terms" in g_sbm_input.vp
+                    and g_sbm_input.vp["win_terms"][v]
+                ):
                     members = list(g_sbm_input.vp["win_terms"][v])
                 else:
                     members = [
@@ -175,7 +183,10 @@ def word_embedding(df_docs, nlp, window_list, n_blocks=None, fixed_seed=None):
             else:
                 doc_label = pd.NA
 
-            if "doc_id" in g_full.vp and g_full.vp["doc_id"][v_doc] is not None:
+            if (
+                "doc_id" in g_full.vp
+                and g_full.vp["doc_id"][v_doc] is not None
+            ):
                 doc_id_str = str(g_full.vp["doc_id"][v_doc])
             else:
                 doc_id_str = str(g_full.vp["name"][v_doc])
@@ -224,12 +235,17 @@ def word_embedding(df_docs, nlp, window_list, n_blocks=None, fixed_seed=None):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--runs", type=int, default=10, help="Nº de repetições")
+    parser.add_argument(
+        "--runs", type=int, default=10, help="Nº de repetições"
+    )
     parser.add_argument(
         "--samples", type=int, default=100, help="Nº de documentos amostrados"
     )
     parser.add_argument(
-        "--seed", type=int, default=None, help="Seed fixa (usada para todas as runs)"
+        "--seed",
+        type=int,
+        default=None,
+        help="Seed fixa (usada para todas as runs)",
     )
     parser.add_argument(
         "--n_blocks",
@@ -257,7 +273,9 @@ def main():
 
     n_runs = args.runs
     n_samples = args.samples
-    fixed_seed = args.seed if args.seed is not None else int(time.time()) % 2**32
+    fixed_seed = (
+        args.seed if args.seed is not None else int(time.time()) % 2**32
+    )
 
     # 🔹 NOVO: resolve a lista de janelas a usar
     def _parse_win(x: str):
@@ -286,7 +304,11 @@ def main():
 
         partitions_rows = []
         for sbm_rows, w2v_rows in word_embedding(
-            df_docs, nlp, WINDOW_LIST, n_blocks=args.n_blocks, fixed_seed=fixed_seed
+            df_docs,
+            nlp,
+            WINDOW_LIST,
+            n_blocks=args.n_blocks,
+            fixed_seed=fixed_seed,
         ):
             partitions_rows.extend(sbm_rows)
             partitions_rows.extend(w2v_rows)
@@ -299,9 +321,9 @@ def main():
             partitions_df["label"], errors="coerce"
         ).astype("Int64")
         if "label_members" in partitions_df.columns:
-            partitions_df["label_members"] = partitions_df["label_members"].astype(
-                "string"
-            )
+            partitions_df["label_members"] = partitions_df[
+                "label_members"
+            ].astype("string")
 
         # salva por modelo/janela
         for model in ["sbm", "w2v"]:
@@ -319,7 +341,9 @@ def main():
                         window=window,
                         partitions_df=df_model,
                     )
-                    print(f"{model.upper()}_J{window} run {idx:03d} salvo em {file}")
+                    print(
+                        f"{model.upper()}_J{window} run {idx:03d} salvo em {file}"
+                    )
 
 
 if __name__ == "__main__":

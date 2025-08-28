@@ -22,13 +22,18 @@ def _next_run_idx(out_dir):
     return (max(idxs) + 1) if idxs else 1
 
 
-def save_partitions_only(base_dir, n_samples, seed, model_name, window, partitions_df):
+def save_partitions_only(
+    base_dir, n_samples, seed, model_name, window, partitions_df
+):
     """
     Salva apenas os dados de partição em um arquivo Parquet com estrutura hierárquica:
     n_samples/seed/model_window/partitions_runXXX.parquet
     """
     out_dir = (
-        Path(base_dir) / str(n_samples) / f"seed_{seed}" / f"{model_name}_J{window}"
+        Path(base_dir)
+        / str(n_samples)
+        / f"seed_{seed}"
+        / f"{model_name}_J{window}"
     )
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -72,8 +77,12 @@ def _update_running_mean(out_dir):
     if not metrics_files:
         return
     all_metrics = [
-        pd.read_parquet(p, engine="pyarrow").set_index(["sbm_window", "w2v_window"])
+        pd.read_parquet(p, engine="pyarrow").set_index(
+            ["sbm_window", "w2v_window"]
+        )
         for p in metrics_files
     ]
     mean_df = sum(all_metrics) / len(all_metrics)
-    mean_df.reset_index().to_parquet(out_dir / "running_mean.parquet", engine="pyarrow")
+    mean_df.reset_index().to_parquet(
+        out_dir / "running_mean.parquet", engine="pyarrow"
+    )

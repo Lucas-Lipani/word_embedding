@@ -1,4 +1,3 @@
-from tqdm import tqdm
 from sklearn.cluster import KMeans
 import numpy as np
 from gensim.models import Word2Vec

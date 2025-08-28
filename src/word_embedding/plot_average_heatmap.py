@@ -17,8 +17,12 @@ def plot_mean_heatmap(parquet_file: Path, metric: str, n_samples: str):
     df = pd.read_parquet(parquet_file)
     model_x, model_y = parquet_file.parent.name.split("_vs_")
 
-    row_key = f"{model_x}_row_window" if model_x == model_y else f"{model_x}_window"
-    col_key = f"{model_y}_col_window" if model_x == model_y else f"{model_y}_window"
+    row_key = (
+        f"{model_x}_row_window" if model_x == model_y else f"{model_x}_window"
+    )
+    col_key = (
+        f"{model_y}_col_window" if model_x == model_y else f"{model_y}_window"
+    )
 
     if {row_key, col_key, metric}.difference(df.columns):
         return
@@ -33,12 +37,23 @@ def plot_mean_heatmap(parquet_file: Path, metric: str, n_samples: str):
         ordered=True,
     )
     df[col_key] = pd.Categorical(
-        df[col_key], sorted(df[col_key].unique(), key=_window_sort_key), ordered=True
+        df[col_key],
+        sorted(df[col_key].unique(), key=_window_sort_key),
+        ordered=True,
     )
     pivot = df.pivot(index=row_key, columns=col_key, values=metric)
 
     plt.figure(figsize=(len(pivot.columns) + 1, len(pivot.index) + 1))
-    normalized_metrics = {"nvi", "nmi", "anmi", "ami", "ari", "rmi", "nrmi", "npo"}
+    normalized_metrics = {
+        "nvi",
+        "nmi",
+        "anmi",
+        "ami",
+        "ari",
+        "rmi",
+        "nrmi",
+        "npo",
+    }
     vmin, vmax = (0, 1) if metric in normalized_metrics else (0, None)
 
     sns.heatmap(
@@ -58,7 +73,9 @@ def plot_mean_heatmap(parquet_file: Path, metric: str, n_samples: str):
     for i in range(n):
         # corrigindo pelo eixo y invertido
         ax.add_patch(
-            plt.Rectangle((i, nrows - 1 - i), 1, 1, fill=False, edgecolor="red", lw=2)
+            plt.Rectangle(
+                (i, nrows - 1 - i), 1, 1, fill=False, edgecolor="red", lw=2
+            )
         )
 
     plt.title(f"Mean {metric.upper()} — {n_samples} samples")
@@ -73,7 +90,9 @@ def plot_mean_heatmap(parquet_file: Path, metric: str, n_samples: str):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Gera os heatmaps médios de métricas.")
+    parser = argparse.ArgumentParser(
+        description="Gera os heatmaps médios de métricas."
+    )
     parser.add_argument(
         "--seed",
         type=str,  # ou int, se preferir

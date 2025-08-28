@@ -20,19 +20,30 @@ def _window_sort_key(w):
 
 def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray) -> dict:
     """
-    Compara duas séries de rótulos de partição e retorna um dicionário de métricas.
+    Compara duas séries de rótulos de partição e 
+    retorna um dicionário de métricas.
     """
     if len(labels_a) != len(labels_b):
-        raise ValueError("As duas séries de rótulos devem ter o mesmo comprimento.")
+        raise ValueError(
+            "As duas séries de rótulos devem ter o mesmo comprimento."
+        )
     return {
         "vi": variation_information(labels_a, labels_b, norm=False),
         "nvi": variation_information(labels_a, labels_b, norm=True),
         "po": partition_overlap(labels_a, labels_b, norm=False),
         "npo": partition_overlap(labels_a, labels_b, norm=True),
-        "mi": mutual_information(labels_a, labels_b, norm=False, adjusted=False),
-        "ami": mutual_information(labels_a, labels_b, norm=False, adjusted=True),
-        "nmi": mutual_information(labels_a, labels_b, norm=True, adjusted=False),
-        "anmi": mutual_information(labels_a, labels_b, norm=True, adjusted=True),
+        "mi": mutual_information(
+            labels_a, labels_b, norm=False, adjusted=False
+        ),
+        "ami": mutual_information(
+            labels_a, labels_b, norm=False, adjusted=True
+        ),
+        "nmi": mutual_information(
+            labels_a, labels_b, norm=True, adjusted=False
+        ),
+        "anmi": mutual_information(
+            labels_a, labels_b, norm=True, adjusted=True
+        ),
         "ari": adjusted_rand_score(labels_a, labels_b),
         "rmi": reduced_mutual_information(labels_a, labels_b, norm=False),
         "nrmi": reduced_mutual_information(labels_a, labels_b, norm=True),
@@ -71,8 +82,12 @@ def compute_seed(seed_dir: Path, model_x: str, model_y: str):
     windows = sorted(data["window"].unique(), key=_window_sort_key)
 
     # Nomes para linhas/colunas do heatmap de médias
-    row_key = f"{model_x}_row_window" if model_x == model_y else f"{model_x}_window"
-    col_key = f"{model_y}_col_window" if model_x == model_y else f"{model_y}_window"
+    row_key = (
+        f"{model_x}_row_window" if model_x == model_y else f"{model_x}_window"
+    )
+    col_key = (
+        f"{model_y}_col_window" if model_x == model_y else f"{model_y}_window"
+    )
 
     rows = []
 
@@ -101,20 +116,34 @@ def compute_seed(seed_dir: Path, model_x: str, model_y: str):
                         continue
 
                     # >>> MÉTRICAS APENAS SOBRE TERMOS (tipo==1) E term NÃO-NULO
-                    df_x_terms = df_x[(df_x["tipo"] == 1) & (df_x["term"].notna())]
-                    df_y_terms = df_y[(df_y["tipo"] == 1) & (df_y["term"].notna())]
+                    df_x_terms = df_x[
+                        (df_x["tipo"] == 1) & (df_x["term"].notna())
+                    ]
+                    df_y_terms = df_y[
+                        (df_y["tipo"] == 1) & (df_y["term"].notna())
+                    ]
                     if df_x_terms.empty or df_y_terms.empty:
                         continue
 
                     common = sorted(
-                        set(df_x_terms["term"]).intersection(df_y_terms["term"]),
+                        set(df_x_terms["term"]).intersection(
+                            df_y_terms["term"]
+                        ),
                         key=str,
                     )
                     if not common:
                         continue
 
-                    labels_x = df_x_terms.set_index("term").loc[common]["label"].values
-                    labels_y = df_y_terms.set_index("term").loc[common]["label"].values
+                    labels_x = (
+                        df_x_terms.set_index("term")
+                        .loc[common]["label"]
+                        .values
+                    )
+                    labels_y = (
+                        df_y_terms.set_index("term")
+                        .loc[common]["label"]
+                        .values
+                    )
 
                     metrics = _compare_metrics(labels_x, labels_y)
                     row_data = {row_key: wx, col_key: wy}
@@ -131,7 +160,10 @@ def compute_seed(seed_dir: Path, model_x: str, model_y: str):
     metric_keys = [k for k in rows[0].keys() if k not in {row_key, col_key}]
 
     mean_df = (
-        pd.DataFrame(rows).groupby([row_key, col_key])[metric_keys].mean().reset_index()
+        pd.DataFrame(rows)
+        .groupby([row_key, col_key])[metric_keys]
+        .mean()
+        .reset_index()
     )
     mean_df.to_parquet(out_root / "running_mean.parquet", engine="pyarrow")
     print(f"    running_mean salvo: {out_root / 'running_mean.parquet'}")
@@ -164,7 +196,9 @@ if __name__ == "__main__":
         else:
             # aceita "42" ou "seed_42"
             seed_name = (
-                args.seed if str(args.seed).startswith("seed_") else f"seed_{args.seed}"
+                args.seed
+                if str(args.seed).startswith("seed_")
+                else f"seed_{args.seed}"
             )
             seeds_to_check = [sample_dir / seed_name]
 

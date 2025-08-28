@@ -187,7 +187,9 @@ def build_window_graph_and_sliding(df, nlp, w):
     window_vertex_full = {}
     window_vertex_slide = {}
 
-    for idx, row in tqdm(df.iterrows(), desc="Processando documentos", total=len(df)):
+    for idx, row in tqdm(
+        df.iterrows(), desc="Processando documentos", total=len(df)
+    ):
         doc_id = str(idx)
         # abstract = row["abstract"]
         # abstract = (
@@ -203,7 +205,6 @@ def build_window_graph_and_sliding(df, nlp, w):
 
         # Tamanho local da janela
         w_local = len(tokens) if w == "full" else int(w)
-        half_w = w_local // 2
 
         # ───── Documento no g_full ─────
         v_doc = g_full.add_vertex()
@@ -288,7 +289,9 @@ def build_window_graph_and_sliding(df, nlp, w):
         if "occurs_total" not in g_slide.vp:
             g_slide.vp["occurs_total"] = g_slide.new_vertex_property("int")
         if "docs" not in g_slide.vp:
-            g_slide.vp["docs"] = g_slide.new_vertex_property("object")  # set de doc_ids
+            g_slide.vp["docs"] = g_slide.new_vertex_property(
+                "object"
+            )  # set de doc_ids
         if "occurs_by_doc" not in g_slide.vp:
             g_slide.vp["occurs_by_doc"] = g_slide.new_vertex_property(
                 "object"
@@ -345,7 +348,9 @@ def build_window_graph_and_sliding(df, nlp, w):
                 if e is None:
                     e = g_slide.add_edge(v_slide, v_tok)
                     g_slide.ep["layer"][e] = 0
-                    g_slide.ep["weight"][e] = c  # primeira vez dessa janela global
+                    g_slide.ep["weight"][
+                        e
+                    ] = c  # primeira vez dessa janela global
                 else:
                     g_slide.ep["weight"][
                         e
@@ -366,9 +371,13 @@ def extract_window_term_graph(g):
 
     # Copiar propriedades
     for prop in g.vp.keys():
-        g_win_term.vp[prop] = g_win_term.new_vertex_property(g.vp[prop].value_type())
+        g_win_term.vp[prop] = g_win_term.new_vertex_property(
+            g.vp[prop].value_type()
+        )
     for prop in g.ep.keys():
-        g_win_term.ep[prop] = g_win_term.new_edge_property(g.ep[prop].value_type())
+        g_win_term.ep[prop] = g_win_term.new_edge_property(
+            g.ep[prop].value_type()
+        )
 
     # Mapear vértices válidos
     vertex_map = {}
@@ -491,9 +500,13 @@ def extract_doc_term_graph(g):
 
     # Criar propriedades
     for prop in g.vp.keys():
-        g_doc_term.vp[prop] = g_doc_term.new_vertex_property(g.vp[prop].value_type())
+        g_doc_term.vp[prop] = g_doc_term.new_vertex_property(
+            g.vp[prop].value_type()
+        )
     for prop in g.ep.keys():
-        g_doc_term.ep[prop] = g_doc_term.new_edge_property(g.ep[prop].value_type())
+        g_doc_term.ep[prop] = g_doc_term.new_edge_property(
+            g.ep[prop].value_type()
+        )
 
     vertex_map = {}
     term_ids = {}

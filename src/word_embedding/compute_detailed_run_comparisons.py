@@ -19,10 +19,18 @@ def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray) -> dict:
         "nvi": variation_information(labels_a, labels_b, norm=True),
         "po": partition_overlap(labels_a, labels_b, norm=False),
         "npo": partition_overlap(labels_a, labels_b, norm=True),
-        "mi": mutual_information(labels_a, labels_b, norm=False, adjusted=False),
-        "ami": mutual_information(labels_a, labels_b, norm=False, adjusted=True),
-        "nmi": mutual_information(labels_a, labels_b, norm=True, adjusted=False),
-        "anmi": mutual_information(labels_a, labels_b, norm=True, adjusted=True),
+        "mi": mutual_information(
+            labels_a, labels_b, norm=False, adjusted=False
+        ),
+        "ami": mutual_information(
+            labels_a, labels_b, norm=False, adjusted=True
+        ),
+        "nmi": mutual_information(
+            labels_a, labels_b, norm=True, adjusted=False
+        ),
+        "anmi": mutual_information(
+            labels_a, labels_b, norm=True, adjusted=True
+        ),
         "ari": adjusted_rand_score(labels_a, labels_b),
         "rmi": reduced_mutual_information(labels_a, labels_b, norm=False),
         "nrmi": reduced_mutual_information(labels_a, labels_b, norm=True),
@@ -41,7 +49,9 @@ def plot_detailed_heatmap(df: pd.DataFrame, metric: str, out_path: Path):
         if metric in {"nvi", "nmi", "anmi", "ami", "ari", "rmi", "nrmi", "npo"}
         else (0, None)
     )
-    sns.heatmap(pivot, annot=True, fmt=".2f", cmap="viridis", vmin=vmin, vmax=vmax)
+    sns.heatmap(
+        pivot, annot=True, fmt=".2f", cmap="viridis", vmin=vmin, vmax=vmax
+    )
     plt.title(f"{metric.upper()} — {out_path.parent.name}")
     plt.tight_layout()
     plt.savefig(out_path)
@@ -78,10 +88,12 @@ def compare_runs_detailed(
     data_y = pd.concat(dfs_y, ignore_index=True)
 
     data_x = data_x[
-        (data_x["model"] == model_x) & (data_x["window"].astype(str) == str(window_x))
+        (data_x["model"] == model_x)
+        & (data_x["window"].astype(str) == str(window_x))
     ]
     data_y = data_y[
-        (data_y["model"] == model_y) & (data_y["window"].astype(str) == str(window_y))
+        (data_y["model"] == model_y)
+        & (data_y["window"].astype(str) == str(window_y))
     ]
 
     runs_x = sorted(data_x["run"].unique())
@@ -95,7 +107,11 @@ def compare_runs_detailed(
     for rx in runs_x:
         for ry in runs_y:
             # evita auto-comparação exata
-            if model_x == model_y and str(window_x) == str(window_y) and rx == ry:
+            if (
+                model_x == model_y
+                and str(window_x) == str(window_y)
+                and rx == ry
+            ):
                 continue
 
             df_rx = data_x[data_x["run"] == rx]
@@ -140,7 +156,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--samples", type=str, required=True)
     parser.add_argument("--seed", type=str, required=True)
-    parser.add_argument("--models", nargs="+", choices=["sbm", "w2v"], required=True)
+    parser.add_argument(
+        "--models", nargs="+", choices=["sbm", "w2v"], required=True
+    )
     parser.add_argument("--window_x", type=str, required=True)
     parser.add_argument("--window_y", type=str, required=True)
     args = parser.parse_args()
@@ -150,7 +168,9 @@ if __name__ == "__main__":
     elif len(args.models) == 2:
         model_x, model_y = args.models
     else:
-        raise ValueError("--models deve conter 1 ou 2 valores: ex: sbm ou sbm w2v")
+        raise ValueError(
+            "--models deve conter 1 ou 2 valores: ex: sbm ou sbm w2v"
+        )
 
     base = Path("../outputs/partitions") / args.samples / f"seed_{args.seed}"
     part_x = sorted(

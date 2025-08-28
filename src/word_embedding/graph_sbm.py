@@ -1,4 +1,8 @@
-from graph_tool.all import minimize_blockmodel_dl, LayeredBlockState, BlockState
+from graph_tool.all import (
+    minimize_blockmodel_dl,
+    LayeredBlockState,
+    BlockState,
+)
 import numpy as np
 
 
@@ -30,7 +34,9 @@ def sbm(g, layered=False, n_blocks=None):
         if n_blocks is not None:
             state_args["B"] = n_blocks
 
-        state = LayeredBlockState(g, state=LayeredBlockState, state_args=state_args)
+        state = LayeredBlockState(
+            g, state=LayeredBlockState, state_args=state_args
+        )
 
     print("=== sbm ===")
     print(state)
@@ -76,7 +82,9 @@ def sbm_with_fixed_term_blocks(g, n_term_blocks, init_method="random"):
     print(f"[DEBUG] Total de vértices: {total}")
     print(f"[DEBUG] Contagem por tipo: {tipo_counts}")
     print(f"[DEBUG] Total de blocos livres usados: {free_block}")
-    print(f"[DEBUG] b_init size: {b_init.a.shape[0]}, clabel size: {clabel.a.shape[0]}")
+    print(
+        f"[DEBUG] b_init size: {b_init.a.shape[0]}, clabel size: {clabel.a.shape[0]}"
+    )
 
     assert b_init.a.shape[0] == g.num_vertices()
     assert clabel.a.shape[0] == g.num_vertices()
@@ -114,7 +122,9 @@ def sbm_with_fixed_term_blocks(g, n_term_blocks, init_method="random"):
             eweight=g.ep["weight"],
             # REMOVIDO: pclabel=g.vp["tipo"]
         )
-        print(f"[SBM] Termos fixados em {n_term_blocks} blocos. Rodando MCMC...")
+        print(
+            f"[SBM] Termos fixados em {n_term_blocks} blocos. Rodando MCMC..."
+        )
         state.mcmc_anneal(beta_range=(1, 20), niter=5000)
         print("[OK] MCMC finalizado com sucesso.")
     except Exception as e:
