@@ -17,16 +17,43 @@ from . import (
 BASE_DIR = Path(__file__).resolve().parent
 
 
+def _get_vertex_blocks_map(state, level: int = 0):
+    """
+    Return a vertex->block PropertyMap for BlockState/LayeredBlockState/NestedBlockState.
+    For nested states, 'level' selects which hierarchy level to read (0 = base/original vertices).
+    """
+    # Nested: pick the requested level and extract its blocks map
+    if hasattr(state, "get_bs"):
+        bs = state.get_bs()
+        if not bs:
+            raise ValueError("NestedBlockState sem níveis (get_bs() vazio).")
+        # nível base particiona os vértices originais
+        return bs[level]
+
+    # Não-nested (BlockState/LayeredBlockState)
+    if hasattr(state, "get_blocks"):
+        try:
+            return state.get_blocks()
+        except Exception:
+            pass
+    if hasattr(state, "b"):
+        return state.b
+
+    raise TypeError(f"Tipo de state não suportado: {type(state)}")
+
+
 def count_connected_term_blocks(state, g, seed=None):
     """
     Retorna a quantidade de blocos conectados que contêm TERMOS (tipo==1),
     apenas para log/diagnóstico. Aceita seed só para logging.
     """
-    blocks_map = state.get_blocks()
+    blocks_map = _get_vertex_blocks_map(state)
+
+    # Conjunto de blocos que possuem ao menos 1 vértice com grau > 0
     connected = {
         int(blocks_map[v])
         for v in g.vertices()
-        if v.out_degree() + v.in_degree() > 0
+        if (v.out_degree() + v.in_degree()) > 0
     }
 
     blocks_by_type = defaultdict(set)
@@ -37,7 +64,7 @@ def count_connected_term_blocks(state, g, seed=None):
         t = int(g.vp["tipo"][v])
         if b in connected:
             blocks_by_type[t].add(b)
-            if t == 1:
+            if t == 1:  # Termo
                 term_blocks.add(b)
 
     print("\n[Depuração] Blocos conectados por tipo:")
@@ -55,7 +82,6 @@ def count_connected_term_blocks(state, g, seed=None):
         print(f"[DEBUG] Seed passada para count_connected_term_blocks: {seed}")
 
     return len(term_blocks)
-
 
 def tokenize_abstracts(df, nlp):
     """
@@ -77,7 +103,7 @@ def tokenize_abstracts(df, nlp):
     return df
 
 
-def word_embedding(df_docs, nlp, window_list, n_blocks=None, fixed_seed=None):
+def word_embedding(df_docs, nlp, window_list, n_blocks=None, fixed_seed=None, nested=False):
     """
     Para cada janela em window_list:
       - constrói g_full (Doc–Jan(3)–Term(1)) e g_slide (Jan-Slide(5)–Term(1));
@@ -99,15 +125,20 @@ def word_embedding(df_docs, nlp, window_list, n_blocks=None, fixed_seed=None):
 
         # Entrada do SBM: grafo Jan-Slide(5)–Term(1)
         g_sbm_input = g_slide
-        state = graph_sbm.sbm(g_sbm_input, n_blocks=n_blocks)
+        state = graph_sbm.sbm(g_sbm_input, n_blocks=None, nested=nested)
 
         # Info de conectividade p/ escolher k de W2V
-        k_blocks = count_connected_term_blocks(
-            state, g_sbm_input, seed=fixed_seed
-        )
+        if n_blocks is not None:
+            k_blocks = n_blocks
+            print(f"Usando número fixo de blocos (W2V k) = {k_blocks}")
+        else:
+            k_blocks = count_connected_term_blocks(
+                state, g_sbm_input, seed=fixed_seed
+            )
 
         # ====== Extrai labels do SBM no grafo de entrada (Termos e Janelas) ======
-        blocks_vec = state.get_blocks().a
+        blocks_vec = _get_vertex_blocks_map(state).a
+
 
         sbm_rows = []
         term_to_block = {}
@@ -251,10 +282,17 @@ def main():
         "--n_blocks",
         type=int,
         default=None,
-        help="Número fixo de blocos (SBM). Se omitido, o SBM decide automaticamente.",
+        help="Número fixo de blocos para o W2V. Se omitido, o W2V decide baseado no SBM.",
     )
 
-    # 🔹 NOVO: escolher janelas pela linha de comando
+    # no seu parser:
+    parser.add_argument(
+        "--nested",
+        action=argparse.BooleanOptionalAction,   # cria --nested e --no-nested
+        default=False,
+        help="Usa SBM em modo nested (layered). Use --no-nested para desativar."
+    )
+
     parser.add_argument(
         "--window",
         "-w",
@@ -309,6 +347,7 @@ def main():
             WINDOW_LIST,
             n_blocks=args.n_blocks,
             fixed_seed=fixed_seed,
+            nested=args.nested,
         ):
             partitions_rows.extend(sbm_rows)
             partitions_rows.extend(w2v_rows)
