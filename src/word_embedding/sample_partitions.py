@@ -45,6 +45,7 @@ def main():
     )
     ap.add_argument("--samples", type=int, required=True)
     ap.add_argument("--seed", required=True)
+    ap.add_argument("--config", type=int, default=1, help="Número da CONFIG (ex: 1 para config_001)")
     ap.add_argument("--run", type=int, required=True)
     ap.add_argument("--model", default="sbm", choices=["sbm", "w2v"])
     ap.add_argument("--window", required=True)  # ex.: 5, 30, full
@@ -58,10 +59,11 @@ def main():
     if args.random_seed is not None:
         random.seed(args.random_seed)
 
-    # caminho do parquet de partição
+    # caminho do parquet de partição (NOVA ESTRUTURA COM CONFIG)
     base = Path("../outputs/partitions")
-    d = base / str(args.samples) / f"seed_{args.seed}" / f"{args.model}_J{args.window}"
+    d = base / str(args.samples) / f"seed_{args.seed}" / f"config_{args.config:03d}" / f"{args.model}_J{args.window}"
     parquet_path = d / f"partitions_run{args.run:03d}.parquet"
+    
     if not parquet_path.exists():
         print(f"[ERROR] parquet não encontrado: {parquet_path}", file=sys.stderr)
         sys.exit(1)
@@ -115,7 +117,7 @@ def main():
     order = part_stats["label"].tolist()
 
     with open(out_txt, "w", encoding="utf-8") as w:
-        header = f"MODEL={args.model} | WINDOW={args.window} | SAMPLES={args.samples} | SEED={args.seed} | RUN={args.run}"
+        header = f"MODEL={args.model} | WINDOW={args.window} | SAMPLES={args.samples} | SEED={args.seed} | CONFIG={args.config:03d} | RUN={args.run}"
         w.write(header + "\n")
         w.write("=" * len(header) + "\n\n")
         for lbl in order:
@@ -128,7 +130,7 @@ def main():
             w.write("\n")
 
     # imprime as K partições escolhidas
-    print(f"=== MODEL: {args.model} | WINDOW: {args.window} | SAMPLES: {args.samples} | SEED: {args.seed} | RUN: {args.run} ===")
+    print(f"=== MODEL: {args.model} | WINDOW: {args.window} | SAMPLES: {args.samples} | SEED: {args.seed} | CONFIG: {args.config:03d} | RUN: {args.run} ===")
     print(f"[saved] {out_txt}")
     for lbl in chosen:
         sub = merged[merged["label"] == lbl].sort_values(["freq", "term"], ascending=[False, True])

@@ -91,12 +91,19 @@ def plot_mean_heatmap(parquet_file: Path, metric: str, n_samples: str):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Gera os heatmaps médios de métricas."
+        description="Gera os heatmaps médios de métricas por CONFIG."
     )
     parser.add_argument(
         "--seed",
-        type=str,  # ou int, se preferir
+        type=str,
         help="processa apenas o diretório seed_X informado (ex.: 1754340049)",
+    )
+    parser.add_argument(
+        "--config",
+        "-c",
+        type=int,
+        help="Número da CONFIG a processar (ex: 1 para config_001). Se omitido, processa todas.",
+        default=None,
     )
     parser.add_argument(
         "--base",
@@ -123,23 +130,37 @@ def main():
 
             print(f"  Seed: {seed_dir.name}")
 
-            for pq in seed_dir.glob("analysis/*/running_mean.parquet"):
-                df_prev = pd.read_parquet(pq, columns=None)
-                metrics = set(df_prev.columns) - {
-                    "run",
-                    "window",
-                    "model",
-                    "term",
-                    "label",
-                    "w2v_col_window",
-                    "w2v_row_window",
-                    "w2v_window",
-                    "sbm_window",
-                    "sbm_row_window",
-                    "sbm_col_window",
-                }
-                for met in metrics:
-                    plot_mean_heatmap(pq, met, n_samples)
+            # >>> NOVO: iterar por CONFIG dentro da seed
+            if args.config is None:
+                config_dirs = sorted(seed_dir.glob("config_*"))
+            else:
+                config_dir = seed_dir / f"config_{args.config:03d}"
+                config_dirs = [config_dir] if config_dir.exists() else []
+            
+            if not config_dirs:
+                print(f"    [WARN] Nenhuma CONFIG encontrada em {seed_dir.name}")
+                continue
+            
+            for config_dir in config_dirs:
+                print(f"    Config: {config_dir.name}")
+                
+                for pq in config_dir.glob("analysis/*/running_mean.parquet"):
+                    df_prev = pd.read_parquet(pq, columns=None)
+                    metrics = set(df_prev.columns) - {
+                        "run",
+                        "window",
+                        "model",
+                        "term",
+                        "label",
+                        "w2v_col_window",
+                        "w2v_row_window",
+                        "w2v_window",
+                        "sbm_window",
+                        "sbm_row_window",
+                        "sbm_col_window",
+                    }
+                    for met in metrics:
+                        plot_mean_heatmap(pq, met, n_samples)
 
 
 if __name__ == "__main__":

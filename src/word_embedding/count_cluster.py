@@ -20,6 +20,13 @@ def parse_args():
         default=None,
         help="Pasta de amostras (ex.: 3). Se omitido, varre todas.",
     )
+    ap.add_argument(
+        "--config",
+        "-c",
+        type=int,
+        help="Número da CONFIG a processar (ex: 1 para config_001). Se omitido, processa todas.",
+        default=None,
+    )
     return ap.parse_args()
 
 
@@ -59,54 +66,69 @@ def main():
             continue
 
         print(f"  Seed: {seed_dir.name}")
+
+        # >>> NOVO: filtrar por CONFIG
+        if args.config is None:
+            config_dirs = sorted(seed_dir.glob("config_*"))
+        else:
+            config_dir = seed_dir / f"config_{args.config:03d}"
+            config_dirs = [config_dir] if config_dir.exists() else []
+        
+        if not config_dirs:
+            print(f"    [WARN] Nenhuma CONFIG encontrada")
+            continue
+
         rows = []
 
-        # percorre modelos/janelas
-        for model_dir in seed_dir.glob("*_J*"):
-            m = re.match(r"(sbm|w2v)_J(.+)", model_dir.name)
-            if not m:
-                continue
-            model, window = m.groups()
+        for config_dir in config_dirs:
+            print(f"  Config: {config_dir.name}")
+            
+            # percorre modelos/janelas dentro desta CONFIG
+            for model_dir in config_dir.glob("*_J*"):
+                m = re.match(r"(sbm|w2v)_J(.+)", model_dir.name)
+                if not m:
+                    continue
+                model, window = m.groups()
 
-            for pf in sorted(model_dir.glob("partitions_run*.parquet")):
-                # run: captura dígitos do final do nome
-                mrun = re.search(r"run_?(\d+)", pf.stem)
-                run = mrun.group(1) if mrun else pf.stem
+                for pf in sorted(model_dir.glob("partitions_run*.parquet")):
+                    # run: captura dígitos do final do nome
+                    mrun = re.search(r"run_?(\d+)", pf.stem)
+                    run = mrun.group(1) if mrun else pf.stem
 
-                df = pd.read_parquet(pf)
+                    df = pd.read_parquet(pf)
 
-                # Garante tipos consistentes
-                if "label" in df.columns:
-                    df["label"] = pd.to_numeric(
-                        df["label"], errors="coerce"
-                    ).astype("Int64")
+                    # Garante tipos consistentes
+                    if "label" in df.columns:
+                        df["label"] = pd.to_numeric(
+                            df["label"], errors="coerce"
+                        ).astype("Int64")
 
-                # Contagem de partições por TIPO
-                if "tipo" in df.columns:
-                    part_by_type = (
-                        df.groupby("tipo")["label"].nunique(dropna=True)
-                    ).reset_index()
-                    for _, r in part_by_type.iterrows():
+                    # Contagem de partições por TIPO
+                    if "tipo" in df.columns:
+                        part_by_type = (
+                            df.groupby("tipo")["label"].nunique(dropna=True)
+                        ).reset_index()
+                        for _, r in part_by_type.iterrows():
+                            rows.append(
+                                {
+                                    "model": model,
+                                    "window": str(window),
+                                    "run": run,
+                                    "tipo": int(r["tipo"]),
+                                    "partitions": int(r["label"]),
+                                }
+                            )
+                    else:
+                        # fallback (antigo): sem coluna tipo, contar geral
                         rows.append(
                             {
                                 "model": model,
                                 "window": str(window),
                                 "run": run,
-                                "tipo": int(r["tipo"]),
-                                "partitions": int(r["label"]),
+                                "tipo": -1,
+                                "partitions": df["label"].nunique(dropna=True),
                             }
                         )
-                else:
-                    # fallback (antigo): sem coluna tipo, contar geral
-                    rows.append(
-                        {
-                            "model": model,
-                            "window": str(window),
-                            "run": run,
-                            "tipo": -1,
-                            "partitions": df["label"].nunique(dropna=True),
-                        }
-                    )
 
         if not rows:
             print(f"  Nenhum dado encontrado para {seed_dir}")

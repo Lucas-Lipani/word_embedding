@@ -284,15 +284,12 @@ def main():
         default=None,
         help="Número fixo de blocos para o W2V. Se omitido, o W2V decide baseado no SBM.",
     )
-
-    # no seu parser:
     parser.add_argument(
         "--nested",
-        action=argparse.BooleanOptionalAction,   # cria --nested e --no-nested
+        action=argparse.BooleanOptionalAction,
         default=False,
         help="Usa SBM em modo nested (layered). Use --no-nested para desativar."
     )
-
     parser.add_argument(
         "--window",
         "-w",
@@ -315,7 +312,6 @@ def main():
         args.seed if args.seed is not None else int(time.time()) % 2**32
     )
 
-    # 🔹 NOVO: resolve a lista de janelas a usar
     def _parse_win(x: str):
         x = str(x).strip().lower()
         return "full" if x == "full" else int(x)
@@ -325,7 +321,7 @@ def main():
     elif args.window is not None:
         WINDOW_LIST = [_parse_win(args.window)]
     else:
-        WINDOW_LIST = [5, 20, 40, "full"]  # default atual
+        WINDOW_LIST = [5, 20, 40, "full"]
 
     OUT_PARTITIONS = Path("../outputs/partitions")
 
@@ -379,6 +375,9 @@ def main():
                         model_name=model,
                         window=window,
                         partitions_df=df_model,
+                        n_blocks=args.n_blocks,
+                        nested=args.nested,
+                        graph_type="Document-SlideWindow-Term",  # ← ALTERADO
                     )
                     print(
                         f"{model.upper()}_J{window} run {idx:03d} salvo em {file}"

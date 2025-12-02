@@ -1,6 +1,7 @@
 from graph_tool.all import Graph
 from tqdm import tqdm
 from collections import Counter
+from pathlib import Path
 
 from . import graph_build
 
@@ -167,13 +168,15 @@ def build_window_graph(g, df, nlp, w):
     return g
 
 
-def build_window_graph_and_sliding(df, nlp, w):
+def build_window_graph_and_sliding(df, nlp, w, save_visualizations=False):
     """
     Constrói dois grafos simultaneamente a partir do corpus:
     - g_full: grafo DOCUMENTO–JANELA–TERMO (com camadas)
     - g_slide: grafo Janela deslizante (tipo 5) → Termo (tipo 1)
 
     A tokenização é feita apenas uma vez por documento.
+
+    :param save_visualizations: Se True, salva PDFs dos grafos construídos
     """
     g_full = initialize_graph()
     g_slide = initialize_graph()
@@ -356,7 +359,52 @@ def build_window_graph_and_sliding(df, nlp, w):
                         e
                     ] += c  # janela repetiu (outro start/mesmo doc ou outro doc)
 
+    if save_visualizations:
+        save_graph_visualization(g_full, f"01_Document-Window-Term_window{w}")
+        save_graph_visualization(g_slide, f"02_Document-SlideWindow-Term_window{w}")
+
     return g_full, g_slide
+
+
+def save_graph_visualization(g, filename: str, layout=None):
+    """
+    Salva visualização do grafo em PDF com nome descritivo.
+
+    :param g: Grafo a visualizar
+    :param filename: Nome do arquivo (sem extensão, será .pdf)
+    :param layout: Layout (pos) para os vértices. Se None, usa sfdp_layout.
+    """
+    from graph_tool.all import sfdp_layout, graph_draw
+
+    out_dir = _ensure_output_dir()
+    output_path = out_dir / f"{filename}.pdf"
+
+    if layout is None:
+        layout = sfdp_layout(g)
+
+    graph_draw(
+        g,
+        pos=layout,
+        vertex_text=g.vp["name"],
+        vertex_text_position=-2,
+        vertex_text_color="black",
+        vertex_font_size=10,
+        vertex_fill_color=g.vp["color"],
+        vertex_size=g.vp["size"],
+        output=str(output_path),
+    )
+
+    print(f"[GRAPH] Grafo salvo em: {output_path}")
+    return output_path
+
+
+def _ensure_output_dir():
+    """
+    Cria o diretório de output para PDFs se não existir.
+    """
+    out_dir = Path("../outputs/graphs")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir
 
 
 def extract_window_term_graph(g):

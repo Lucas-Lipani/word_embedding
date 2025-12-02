@@ -152,10 +152,11 @@ def compare_runs_detailed(
         plot_detailed_heatmap(df_result, metric, out_dir / f"{metric}.png")
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--samples", type=str, required=True)
     parser.add_argument("--seed", type=str, required=True)
+    parser.add_argument("--config", type=int, default=1, help="Número da CONFIG (ex: 1 para config_001)")
     parser.add_argument(
         "--models", nargs="+", choices=["sbm", "w2v"], required=True
     )
@@ -172,7 +173,8 @@ if __name__ == "__main__":
             "--models deve conter 1 ou 2 valores: ex: sbm ou sbm w2v"
         )
 
-    base = Path("../outputs/partitions") / args.samples / f"seed_{args.seed}"
+    # NOVA ESTRUTURA COM CONFIG
+    base = Path("../outputs/partitions") / args.samples / f"seed_{args.seed}" / f"config_{args.config:03d}"
     part_x = sorted(
         (base / f"{model_x}_J{args.window_x}").glob("partitions_run*.parquet")
     )
@@ -190,3 +192,6 @@ if __name__ == "__main__":
     compare_runs_detailed(
         part_x, part_y, model_x, model_y, args.window_x, args.window_y, out_dir
     )
+
+if __name__ == "__main__":
+    main()

@@ -2,6 +2,7 @@
 from pathlib import Path
 import re
 import pandas as pd
+from . import config_manager
 
 
 def _build_dir(base_out, n_samples, windows):
@@ -23,18 +24,44 @@ def _next_run_idx(out_dir):
 
 
 def save_partitions_only(
-    base_dir, n_samples, seed, model_name, window, partitions_df
+    base_dir, 
+    n_samples, 
+    seed, 
+    model_name, 
+    window, 
+    partitions_df,
+    n_blocks=None,
+    nested=False,
+    graph_type="Document-Window-Term",
 ):
     """
-    Salva apenas os dados de partição em um arquivo Parquet com estrutura hierárquica:
-    n_samples/seed/model_window/partitions_runXXX.parquet
+    Salva partições em estrutura: n_samples/seed_XXX/config_NNN/{model}_J{window}/
+    
+    Detecta/cria CONFIG_NNN baseado em assinatura (sbm_mode, graph_type, fixed_n_blocks).
     """
-    out_dir = (
-        Path(base_dir)
-        / str(n_samples)
-        / f"seed_{seed}"
-        / f"{model_name}_J{window}"
+    base_path = Path(base_dir) / str(n_samples)
+    seed_dir = base_path / f"seed_{seed}"
+    
+    # Usa ConfigManager para encontrar/criar pasta config_NNN
+    cfg_mgr = config_manager.ConfigManager(seed_dir)
+    config_dir, config_idx, was_reused = cfg_mgr.find_or_create_config_dir(
+        nested=nested,
+        graph_type=graph_type,
+        n_blocks=n_blocks,
     )
+    
+    # Salva config.json na pasta config_NNN
+    cfg_mgr.save_config(
+        config_dir=config_dir,
+        n_samples=n_samples,
+        seed=seed,
+        nested=nested,
+        n_blocks=n_blocks,
+        graph_type=graph_type,
+    )
+    
+    # Pasta para este modelo/janela dentro de config_NNN
+    out_dir = config_dir / f"{model_name}_J{window}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Gerar índice da execução
