@@ -24,11 +24,11 @@ def _next_run_idx(out_dir):
 
 
 def save_partitions_only(
-    base_dir, 
-    n_samples, 
-    seed, 
-    model_name, 
-    window, 
+    base_dir,
+    n_samples,
+    seed,
+    model_name,
+    window,
     partitions_df,
     n_blocks=None,
     nested=False,
@@ -36,12 +36,12 @@ def save_partitions_only(
 ):
     """
     Salva partições em estrutura: n_samples/seed_XXX/config_NNN/{model}_J{window}/
-    
+
     Detecta/cria CONFIG_NNN baseado em assinatura (sbm_mode, graph_type, fixed_n_blocks).
     """
     base_path = Path(base_dir) / str(n_samples)
     seed_dir = base_path / f"seed_{seed}"
-    
+
     # Usa ConfigManager para encontrar/criar pasta config_NNN
     cfg_mgr = config_manager.ConfigManager(seed_dir)
     config_dir, config_idx, was_reused = cfg_mgr.find_or_create_config_dir(
@@ -49,7 +49,7 @@ def save_partitions_only(
         graph_type=graph_type,
         n_blocks=n_blocks,
     )
-    
+
     # Salva config.json na pasta config_NNN
     cfg_mgr.save_config(
         config_dir=config_dir,
@@ -59,7 +59,7 @@ def save_partitions_only(
         n_blocks=n_blocks,
         graph_type=graph_type,
     )
-    
+
     # Pasta para este modelo/janela dentro de config_NNN
     out_dir = config_dir / f"{model_name}_J{window}"
     out_dir.mkdir(parents=True, exist_ok=True)

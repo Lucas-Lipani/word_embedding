@@ -1,4 +1,5 @@
 from pathlib import Path
+from glob import glob
 import pandas as pd
 import argparse
 import numpy as np
@@ -20,7 +21,7 @@ def _window_sort_key(w):
 
 def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray) -> dict:
     """
-    Compara duas séries de rótulos de partição e 
+    Compara duas séries de rótulos de partição e
     retorna um dicionário de métricas.
     """
     if len(labels_a) != len(labels_b):
@@ -54,7 +55,7 @@ def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray) -> dict:
 def compute_config(config_dir: Path, model_x: str, model_y: str):
     """
     Processa UMA CONFIG específica, comparando modelo_x vs modelo_y.
-    
+
     :param config_dir: Caminho da pasta config_NNN (ex: 5/seed_42/config_001/)
     :param model_x: Modelo a comparar ("sbm" ou "w2v")
     :param model_y: Modelo a comparar ("sbm" ou "w2v")
@@ -63,18 +64,14 @@ def compute_config(config_dir: Path, model_x: str, model_y: str):
     out_root = config_dir / "analysis" / f"{model_x}_vs_{model_y}"
     out_root.mkdir(parents=True, exist_ok=True)
 
-    # Carrega partições: procura {model}_J* dentro desta CONFIG
-    part_x_dir = config_dir / f"{model_x}_J*"
-    part_y_dir = config_dir / f"{model_y}_J*"
-
-    # Usa glob para encontrar pastas
-    from glob import glob
-    
+    # Encontra todas as pastas de partições para cada modelo
     part_x_dirs = sorted(Path(config_dir).glob(f"{model_x}_J*"))
     part_y_dirs = sorted(Path(config_dir).glob(f"{model_y}_J*"))
 
     if not part_x_dirs or not part_y_dirs:
-        print(f"    [WARN] Sem dados para {model_x} ou {model_y} em {config_dir.name}")
+        print(
+            f"    [WARN] Sem dados para {model_x} ou {model_y} em {config_dir.name}"
+        )
         return
 
     # Carrega todos os parquets
@@ -243,9 +240,11 @@ if __name__ == "__main__":
             else:
                 config_dir = seed_dir / f"config_{args.config:03d}"
                 config_dirs = [config_dir] if config_dir.exists() else []
-            
+
             if not config_dirs:
-                print(f"    [WARN] Nenhuma CONFIG encontrada em {seed_dir.name}")
+                print(
+                    f"    [WARN] Nenhuma CONFIG encontrada em {seed_dir.name}"
+                )
                 continue
 
             for config_dir in config_dirs:

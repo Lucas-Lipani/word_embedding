@@ -83,6 +83,7 @@ def count_connected_term_blocks(state, g, seed=None):
 
     return len(term_blocks)
 
+
 def tokenize_abstracts(df, nlp):
     """
     Adiciona uma coluna 'tokens' ao DataFrame com a lista de tokens tratados.
@@ -103,12 +104,22 @@ def tokenize_abstracts(df, nlp):
     return df
 
 
-def word_embedding(df_docs, nlp, window_list, n_blocks=None, fixed_seed=None, nested=False):
+def word_embedding(
+    df_docs,
+    nlp,
+    window_list,
+    graph_type="Document-SlideWindow-Term",
+    n_blocks=None,
+    fixed_seed=None,
+    nested=False,
+):
     """
     Para cada janela em window_list:
-      - constrói g_full (Doc–Jan(3)–Term(1)) e g_slide (Jan-Slide(5)–Term(1));
-      - roda SBM em g_slide;
-      - salva linhas no parquet para Termos(1), Janelas(5) e Documentos(0).
+      - constrói grafos de acordo com graph_type
+      - roda SBM no grafo de entrada
+      - salva linhas no parquet para Termos(1), Janelas(3/5), Documentos(0), etc.
+
+    :param graph_type: Tipo de grafo ("Document-SlideWindow-Term", "Document-Term", etc.)
     """
     # Treina (ou carrega) W2V por janela
     w2v_models = {
@@ -118,13 +129,29 @@ def word_embedding(df_docs, nlp, window_list, n_blocks=None, fixed_seed=None, ne
 
     for sbm_window in window_list:
         print(f"\n### SBM janela = {sbm_window}")
-        # Constrói grafos
-        g_full, g_slide = graph_build.build_window_graph_and_sliding(
-            df_docs, nlp, sbm_window
-        )
 
-        # Entrada do SBM: grafo Jan-Slide(5)–Term(1)
-        g_sbm_input = g_slide
+        # Constrói grafos de acordo com graph_type
+        if graph_type == "Document-SlideWindow-Term":
+            g_full, g_sbm_input = graph_build.build_window_graph_and_sliding(
+                df_docs, nlp, sbm_window
+            )
+        elif graph_type == "Document-Term":
+            g_full = graph_build.build_doc_term_graph(df_docs, nlp)
+            g_sbm_input = g_full
+        elif graph_type == "Document-Context-Window-Term":
+            g_full, g_sbm_input = graph_build.build_context_window_term_graph(
+                df_docs, nlp, sbm_window
+            )
+        elif graph_type == "Document-Window-Term":
+            g_full = graph_build.build_window_graph(
+                graph_build.initialize_graph(), df_docs, nlp, sbm_window
+            )
+            # Extrair janelas + termos para SBM
+            g_sbm_input = graph_build.extract_window_term_graph(g_full)
+        else:
+            raise ValueError(f"graph_type desconhecido: {graph_type}")
+
+        # Aplicar SBM no grafo apropriado
         state = graph_sbm.sbm(g_sbm_input, n_blocks=None, nested=nested)
 
         # Info de conectividade p/ escolher k de W2V
@@ -136,9 +163,8 @@ def word_embedding(df_docs, nlp, window_list, n_blocks=None, fixed_seed=None, ne
                 state, g_sbm_input, seed=fixed_seed
             )
 
-        # ====== Extrai labels do SBM no grafo de entrada (Termos e Janelas) ======
+        # ====== Extrai labels do SBM no grafo de entrada ======
         blocks_vec = _get_vertex_blocks_map(state).a
-
 
         sbm_rows = []
         term_to_block = {}
@@ -153,34 +179,14 @@ def word_embedding(df_docs, nlp, window_list, n_blocks=None, fixed_seed=None, ne
                 "model": "sbm",
                 "vertex": name,
                 "tipo": t,
-                "label": sbm_lbl,  # manter numérico para todos
+                "label": sbm_lbl,
                 "doc_id": None,
                 "term": None,
             }
 
             if t == 1:
-                # Termos: guardamos label numérico (usado nas métricas)
                 term_to_block[name] = sbm_lbl
                 row["term"] = name
-
-            elif t == 5:
-                # Janelas: adicionar membros (lista de termos) em 'label_members'
-                if (
-                    "win_terms" in g_sbm_input.vp
-                    and g_sbm_input.vp["win_terms"][v]
-                ):
-                    members = list(g_sbm_input.vp["win_terms"][v])
-                else:
-                    members = [
-                        g_sbm_input.vp["name"][u]
-                        for u in v.out_neighbors()
-                        if int(g_sbm_input.vp["tipo"][u]) == 1
-                    ]
-                row["label_members"] = ";".join(members)
-
-                # doc_id, se disponível
-                if "doc_id" in g_sbm_input.vp:
-                    row["doc_id"] = g_sbm_input.vp["doc_id"][v]
 
             sbm_rows.append(row)
 
@@ -191,20 +197,31 @@ def word_embedding(df_docs, nlp, window_list, n_blocks=None, fixed_seed=None, ne
                 continue
 
             term_labels = []
-            # Doc(0) -> Jan(3) -> Term(1)
-            for e_doc_win in v_doc.out_edges():
-                v_win = e_doc_win.target()
-                if int(g_full.vp["tipo"][v_win]) != 3:
-                    continue
-
-                for e_win_term in v_win.out_edges():
-                    v_term = e_win_term.target()
-                    if int(g_full.vp["tipo"][v_term]) != 1:
-                        continue
-                    tname = g_full.vp["name"][v_term]
+            # Busca termos conectados a este documento (caminhos variáveis por tipo)
+            for e_doc in v_doc.all_edges():
+                neighbor = (
+                    e_doc.target()
+                    if e_doc.source() == v_doc
+                    else e_doc.source()
+                )
+                if int(g_full.vp["tipo"][neighbor]) == 1:  # Termo direto
+                    tname = g_full.vp["name"][neighbor]
                     lbl = term_to_block.get(tname)
                     if lbl is not None:
                         term_labels.append(lbl)
+                else:
+                    # Procura termos via intermediários (janelas, contexto, etc.)
+                    for e_inter in neighbor.all_edges():
+                        v_term = (
+                            e_inter.target()
+                            if e_inter.source() == neighbor
+                            else e_inter.source()
+                        )
+                        if int(g_full.vp["tipo"][v_term]) == 1:
+                            tname = g_full.vp["name"][v_term]
+                            lbl = term_to_block.get(tname)
+                            if lbl is not None:
+                                term_labels.append(lbl)
 
             if term_labels:
                 counts = Counter(term_labels)
@@ -227,8 +244,8 @@ def word_embedding(df_docs, nlp, window_list, n_blocks=None, fixed_seed=None, ne
                     "window": sbm_window,
                     "model": "sbm",
                     "vertex": doc_id_str,
-                    "tipo": 0,  # DOCUMENTO
-                    "label": doc_label,  # numérico (nullable)
+                    "tipo": 0,
+                    "label": doc_label,
                     "doc_id": doc_id_str,
                     "term": None,
                 }
@@ -237,7 +254,6 @@ def word_embedding(df_docs, nlp, window_list, n_blocks=None, fixed_seed=None, ne
         sbm_rows.extend(doc_rows)
 
         # ====== W2V clustering (somente termos) ======
-        # Usa Doc–Term agregado (ou seu fluxo já existente)
         g_dt = graph_build.extract_doc_term_graph(g_full)
         _ = w2vec_kmeans.cluster_terms(
             g_dt, w2v_models[sbm_window], n_clusters=k_blocks
@@ -261,7 +277,7 @@ def word_embedding(df_docs, nlp, window_list, n_blocks=None, fixed_seed=None, ne
                 }
             )
 
-        yield sbm_rows, w2v_rows  # devolve linhas para a etapa de salvamento
+        yield sbm_rows, w2v_rows
 
 
 def main():
@@ -288,7 +304,7 @@ def main():
         "--nested",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="Usa SBM em modo nested (layered). Use --no-nested para desativar."
+        help="Usa SBM em modo nested (layered). Use --no-nested para desativar.",
     )
     parser.add_argument(
         "--window",
@@ -302,6 +318,17 @@ def main():
         nargs="+",
         default=None,
         help="Lista de janelas (ex.: --windows 5 20 40 full)",
+    )
+    parser.add_argument(
+        "--graph-type",
+        choices=[
+            "Document-Window-Term",
+            "Document-SlideWindow-Term",
+            "Document-Context-Window-Term",
+            "Document-Term",
+        ],
+        default="Document-SlideWindow-Term",
+        help="Tipo de grafo a construir",
     )
 
     args = parser.parse_args()
@@ -335,12 +362,16 @@ def main():
         print(f"\n=== Execução {r+1}/{n_runs} ===")
         print(f"Seed usada (fixa): {fixed_seed}")
         print(f"Janelas: {WINDOW_LIST}")
+        print(f"Tipo de Grafo: {args.graph_type}")
 
         partitions_rows = []
+
+        # Uma única chamada para word_embedding com graph_type como parâmetro
         for sbm_rows, w2v_rows in word_embedding(
             df_docs,
             nlp,
             WINDOW_LIST,
+            graph_type=args.graph_type,  # ← PARÂMETRO
             n_blocks=args.n_blocks,
             fixed_seed=fixed_seed,
             nested=args.nested,
@@ -377,7 +408,7 @@ def main():
                         partitions_df=df_model,
                         n_blocks=args.n_blocks,
                         nested=args.nested,
-                        graph_type="Document-SlideWindow-Term",  # ← ALTERADO
+                        graph_type=args.graph_type,  # ← SALVA NO CONFIG
                     )
                     print(
                         f"{model.upper()}_J{window} run {idx:03d} salvo em {file}"

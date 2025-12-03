@@ -6,7 +6,10 @@ from graph_tool.all import (
 )
 import numpy as np
 
-def sbm(g, layered: bool = False, n_blocks: int | None = None, nested: bool = False):
+
+def sbm(
+    g, layered: bool = False, n_blocks: int | None = None, nested: bool = False
+):
     """
     Ajusta um SBM no grafo `g`.
 
@@ -33,12 +36,16 @@ def sbm(g, layered: bool = False, n_blocks: int | None = None, nested: bool = Fa
 
     if nested:
         if n_blocks is not None:
-            print("[sbm] Aviso: n_blocks é ignorado no modo nested (hierárquico).")
+            print(
+                "[sbm] Aviso: n_blocks é ignorado no modo nested (hierárquico)."
+            )
         # Nested: escolhe o base state automaticamente ou força o Layered quando necessário
         if state_cls is None:
             state = minimize_nested_blockmodel_dl(g, state_args=state_args)
         else:
-            state = minimize_nested_blockmodel_dl(g, state=state_cls, state_args=state_args)
+            state = minimize_nested_blockmodel_dl(
+                g, state=state_cls, state_args=state_args
+            )
     else:
         # Não-nested: permitir fixar B
         mcmc_args = {}
@@ -52,7 +59,10 @@ def sbm(g, layered: bool = False, n_blocks: int | None = None, nested: bool = Fa
             )
         else:
             state = minimize_blockmodel_dl(
-                g, state=state_cls, state_args=state_args, multilevel_mcmc_args=mcmc_args
+                g,
+                state=state_cls,
+                state_args=state_args,
+                multilevel_mcmc_args=mcmc_args,
             )
 
     print("=== sbm ===")

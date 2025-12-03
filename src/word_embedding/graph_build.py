@@ -361,7 +361,9 @@ def build_window_graph_and_sliding(df, nlp, w, save_visualizations=False):
 
     if save_visualizations:
         save_graph_visualization(g_full, f"01_Document-Window-Term_window{w}")
-        save_graph_visualization(g_slide, f"02_Document-SlideWindow-Term_window{w}")
+        save_graph_visualization(
+            g_slide, f"02_Document-SlideWindow-Term_window{w}"
+        )
 
     return g_full, g_slide
 
@@ -384,7 +386,7 @@ def save_graph_visualization(g, filename: str, layout=None):
 
     graph_draw(
         g,
-        pos=layout,
+        pos=g.vp["posicao"],
         vertex_text=g.vp["name"],
         vertex_text_position=-2,
         vertex_text_color="black",

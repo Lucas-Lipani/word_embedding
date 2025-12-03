@@ -136,14 +136,16 @@ def main():
             else:
                 config_dir = seed_dir / f"config_{args.config:03d}"
                 config_dirs = [config_dir] if config_dir.exists() else []
-            
+
             if not config_dirs:
-                print(f"    [WARN] Nenhuma CONFIG encontrada em {seed_dir.name}")
+                print(
+                    f"    [WARN] Nenhuma CONFIG encontrada em {seed_dir.name}"
+                )
                 continue
-            
+
             for config_dir in config_dirs:
                 print(f"    Config: {config_dir.name}")
-                
+
                 for pq in config_dir.glob("analysis/*/running_mean.parquet"):
                     df_prev = pd.read_parquet(pq, columns=None)
                     metrics = set(df_prev.columns) - {

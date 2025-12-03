@@ -73,7 +73,7 @@ def main():
         else:
             config_dir = seed_dir / f"config_{args.config:03d}"
             config_dirs = [config_dir] if config_dir.exists() else []
-        
+
         if not config_dirs:
             print(f"    [WARN] Nenhuma CONFIG encontrada")
             continue
@@ -82,7 +82,7 @@ def main():
 
         for config_dir in config_dirs:
             print(f"  Config: {config_dir.name}")
-            
+
             # percorre modelos/janelas dentro desta CONFIG
             for model_dir in config_dir.glob("*_J*"):
                 m = re.match(r"(sbm|w2v)_J(.+)", model_dir.name)
