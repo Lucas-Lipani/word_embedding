@@ -1,3 +1,18 @@
+# Word Embedding + SBM Analysis Pipeline
+
+## Project Overview
+
+This project combines **Stochastic Block Models (SBM)** and **Word2Vec + KMeans** clustering to analyze document corpora through both structural and semantic lenses. The goal is to understand how **topological communities** and **semantic clusters** of terms align or diverge.
+
+Part of the **Cortext** platform (LISIS, CNRS, INRAE, UGE) research initiative.
+
+---
+
+## Current Architecture
+
+### Data Structure: `conf/NNNN/run/RRRR/`
+
+````markdown
 # Tremplin Recherche Project – Semantic and Structural Analysis of Documents
 
 ## General Objective
@@ -47,7 +62,7 @@ The code now implements a **modular, multi-run experimental pipeline** with impr
 
 | Method       | Description                                                      |
 | ------------ | ---------------------------------------------------------------- |
-| **SBM**      | Captures communities based on topological co-occurrence patterns |
+| **SBM**      | Captures communities based on topological co-occurrence pme manda um md com a atterns |
 | **Word2Vec** | Learns distributed representations based on lexical context      |
 | **KMeans**   | Groups vectors into convex clusters                              |
 
@@ -90,7 +105,7 @@ python3 word_embedding/plot_average_heatmap.py
 Each step is fully reproducible via the provided `--seed`.
 
 ---
-
+me manda um md com a 
 ## Results Summary
 
 The experiments were conducted using controlled samples with fixed seeds for reproducibility.
@@ -114,3 +129,4 @@ Key takeaways include:
 ---
 
 Instead of forcing a single view, this project emphasizes the **productive tension** between structure and semantics — and how that tension can be **measured, visualized, and leveraged**.
+````

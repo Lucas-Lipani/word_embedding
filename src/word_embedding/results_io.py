@@ -1,115 +1,109 @@
 # word_embedding/results_io.py
 from pathlib import Path
-import re
+from typing import Dict
 import pandas as pd
 from . import config_manager
 
 
-def _build_dir(base_out, n_samples, windows):
-    win_tag = "-".join(map(str, windows))
-    out_dir = Path(base_out) / f"{n_samples}s_{win_tag}w"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    return out_dir
-
-
-def _next_run_idx(out_dir):
-    # procura ficheiros do tipo *_runNNN_*.parquet
-    expr = re.compile(r"_run(\d{3})_")
-    idxs = []
-    for p in out_dir.glob("*_run*.parquet"):
-        m = expr.search(p.name)
-        if m:
-            idxs.append(int(m.group(1)))
-    return (max(idxs) + 1) if idxs else 1
-
-
-def save_partitions_only(
-    base_dir,
-    n_samples,
-    seed,
-    model_name,
-    window,
-    partitions_df,
-    n_blocks=None,
-    nested=False,
-    graph_type="Document-Window-Term",
+def save_partitions_by_config(
+    base_conf_dir: Path,
+    n_samples: int,
+    seed: int,
+    graph_type: str,
+    nested: bool,
+    n_blocks: int | None,
+    run_idx: int,
+    partitions_df: pd.DataFrame,
+    sbm_entropy: float | None = None,
+    # >>> Informações detalhadas do grafo e SBM
+    vertices_pre_sbm: Dict[int, int] = None,
+    blocks_post_sbm: Dict[int, int] = None,
+    term_blocks_count: int = None,
+    window_blocks_count: int = None,
+    # >>> Informações do W2V
+    w2v_n_clusters: int = None,
+    w2v_sg: int = None,
+    w2v_window: int = None,
+    w2v_vector_size: int = None,
 ):
     """
-    Salva partições em estrutura: n_samples/seed_XXX/config_NNN/{model}_J{window}/
-
-    Detecta/cria CONFIG_NNN baseado em assinatura (sbm_mode, graph_type, fixed_n_blocks).
+    Salva partições na nova estrutura: conf/NNNN/run/RRRR/partition.parquet
+    Com informações detalhadas sobre estrutura do grafo, blocos do SBM e W2V.
     """
-    base_path = Path(base_dir) / str(n_samples)
-    seed_dir = base_path / f"seed_{seed}"
+    cfg_mgr = config_manager.ConfigManager(base_conf_dir)
 
-    # Usa ConfigManager para encontrar/criar pasta config_NNN
-    cfg_mgr = config_manager.ConfigManager(seed_dir)
+    # Encontrar ou criar config_dir
     config_dir, config_idx, was_reused = cfg_mgr.find_or_create_config_dir(
-        nested=nested,
+        n_samples=n_samples,
+        seed=seed,
         graph_type=graph_type,
+        nested=nested,
         n_blocks=n_blocks,
     )
 
-    # Salva config.json na pasta config_NNN
+    # Salvar config.json
     cfg_mgr.save_config(
         config_dir=config_dir,
         n_samples=n_samples,
         seed=seed,
+        graph_type=graph_type,
         nested=nested,
         n_blocks=n_blocks,
-        graph_type=graph_type,
     )
 
-    # Pasta para este modelo/janela dentro de config_NNN
-    out_dir = config_dir / f"{model_name}_J{window}"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # Calcular o próximo run_idx disponível
+    run_dir_base = config_dir / "run"
+    run_dir_base.mkdir(parents=True, exist_ok=True)
 
-    # Gerar índice da execução
-    existing = list(out_dir.glob("partitions_run*.parquet"))
-    run_idx = (
-        max([int(p.stem.split("run")[1]) for p in existing], default=0) + 1
-        if existing
+    existing_runs = sorted(run_dir_base.glob("????"))
+    next_run_idx = (
+        max([int(d.name) for d in existing_runs], default=0) + 1
+        if existing_runs
         else 1
     )
 
-    fname = out_dir / f"partitions_run{run_idx:03d}.parquet"
-    partitions_df.to_parquet(fname, engine="pyarrow")
+    print(f"[RUN_IDX] Próximo run_idx disponível: {next_run_idx:04d}")
 
-    return run_idx, fname
+    run_dir = run_dir_base / f"{next_run_idx:04d}"
+    run_dir.mkdir(parents=True, exist_ok=True)
 
+    # Salvar partition.parquet
+    partition_file = run_dir / "partition.parquet"
+    partitions_df.to_parquet(partition_file, engine="pyarrow")
 
-def save_run(out_base, n_samples, windows, metrics_df, partitions_df):
-    """
-    Salva Parquets usando modo 'x'. Se já existirem, falha (evita sobrescrever).
-    Retorna o índice da execução salva.
-    """
-    out_dir = _build_dir(out_base, n_samples, windows)
-    run_idx = _next_run_idx(out_dir)
-    tag = f"_run{run_idx:03d}_"
-
-    metrics_f = out_dir / f"metrics{tag}.parquet"
-    partitions_f = out_dir / f"partitions{tag}.parquet"
-
-    metrics_df.to_parquet(metrics_f, engine="pyarrow")
-    partitions_df.to_parquet(partitions_f, engine="pyarrow")
-
-    _update_running_mean(out_dir)
-
-    return run_idx, metrics_f, partitions_f
-
-
-def _update_running_mean(out_dir):
-    """Concatena todos os metrics*.parquet, tira média e salva."""
-    metrics_files = sorted(out_dir.glob("metrics_run*.parquet"))
-    if not metrics_files:
-        return
-    all_metrics = [
-        pd.read_parquet(p, engine="pyarrow").set_index(
-            ["sbm_window", "w2v_window"]
-        )
-        for p in metrics_files
-    ]
-    mean_df = sum(all_metrics) / len(all_metrics)
-    mean_df.reset_index().to_parquet(
-        out_dir / "running_mean.parquet", engine="pyarrow"
+    # Salvar parameters.json COM TODAS AS INFORMAÇÕES (SBM + W2V)
+    cfg_mgr.save_run_parameters(
+        config_dir=config_dir,
+        run_idx=next_run_idx,
+        sbm_entropy=sbm_entropy,
+        vertices_pre_sbm=vertices_pre_sbm,
+        blocks_post_sbm=blocks_post_sbm,
+        term_blocks_count=term_blocks_count,
+        window_blocks_count=window_blocks_count,
+        w2v_n_clusters=w2v_n_clusters,
+        w2v_sg=w2v_sg,
+        w2v_window=w2v_window,
+        w2v_vector_size=w2v_vector_size,
     )
+
+    print(f"[SAVED] Partição salva: {partition_file}")
+
+    return config_idx, next_run_idx, partition_file
+
+
+def load_partitions(config_dir: Path, run_idx: int) -> pd.DataFrame:
+    """
+    Carrega partições de conf/NNNN/run/RRRR/partition.parquet
+
+    :param config_dir: Pasta config/NNNN
+    :param run_idx: Índice da execução
+    :return: DataFrame com partições
+    """
+    partition_file = (
+        config_dir / "run" / f"{run_idx:04d}" / "partition.parquet"
+    )
+
+    if not partition_file.exists():
+        raise FileNotFoundError(f"Partição não encontrada: {partition_file}")
+
+    return pd.read_parquet(partition_file, engine="pyarrow")

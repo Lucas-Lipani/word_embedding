@@ -1,168 +1,223 @@
-from pathlib import Path
+"""
+Plota heatmaps de MÉDIAS de métricas agregadas para as 3 comparações:
+- SBM vs W2V
+- SBM vs SBM
+- W2V vs W2V
+
+Carrega dados PRÉ-CALCULADOS de conf/NNNN/analysis/{comparacao}/running_mean.parquet
+NOVA ESTRUTURA: conf/NNNN/analysis/{model_x}_vs_{model_y}/running_mean.parquet
+"""
+
 import argparse
+import sys
+from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import colorcet as cc
 
 
-def _window_sort_key(win):
-    return float("inf") if win == "full" else int(win)
+def _window_sort_key(w):
+    """Ordena janelas de forma que 'full' fique no final."""
+    return float("inf") if w == "full" else int(w)
 
 
-def plot_mean_heatmap(parquet_file: Path, metric: str, n_samples: str):
-    if not parquet_file.exists():
-        return
+def plot_average_heatmaps(config_dir: Path, model_x: str, model_y: str):
+    """
+    Plota heatmaps para MÉDIAS de {model_x} vs {model_y}.
 
-    df = pd.read_parquet(parquet_file)
-    model_x, model_y = parquet_file.parent.name.split("_vs_")
+    NOVA ESTRUTURA: conf/NNNN/analysis/{model_x}_vs_{model_y}/running_mean.parquet
 
-    row_key = (
-        f"{model_x}_row_window" if model_x == model_y else f"{model_x}_window"
+    :param config_dir: Caminho da pasta conf/NNNN
+    :param model_x: Modelo X (ex: "sbm", "w2v")
+    :param model_y: Modelo Y (ex: "sbm", "w2v")
+    """
+
+    # Caminho do arquivo de métricas MÉDIAS
+    metrics_file = (
+        config_dir
+        / "analysis"
+        / f"{model_x}_vs_{model_y}"
+        / "running_mean.parquet"
     )
-    col_key = (
-        f"{model_y}_col_window" if model_x == model_y else f"{model_y}_window"
-    )
 
-    if {row_key, col_key, metric}.difference(df.columns):
-        return
+    if not metrics_file.exists():
+        print(f"[WARN] Arquivo não encontrado: {metrics_file}")
+        return False
 
-    df = df[[row_key, col_key, metric]].dropna()
+    try:
+        df = pd.read_parquet(metrics_file)
+    except Exception as e:
+        print(f"[ERROR] Falha ao carregar parquet: {e}", file=sys.stderr)
+        return False
+
     if df.empty:
-        return
+        print(f"[WARN] DataFrame vazio: {metrics_file}", file=sys.stderr)
+        return False
 
-    df[row_key] = pd.Categorical(
-        df[row_key],
-        sorted(df[row_key].unique(), key=_window_sort_key)[::-1],
-        ordered=True,
-    )
-    df[col_key] = pd.Categorical(
-        df[col_key],
-        sorted(df[col_key].unique(), key=_window_sort_key),
-        ordered=True,
-    )
-    pivot = df.pivot(index=row_key, columns=col_key, values=metric)
+    print(f"\n[LOAD] {model_x.upper()} vs {model_y.upper()}: {df.shape}")
 
-    plt.figure(figsize=(len(pivot.columns) + 1, len(pivot.index) + 1))
-    normalized_metrics = {
-        "nvi",
-        "nmi",
-        "anmi",
-        "ami",
-        "ari",
-        "rmi",
-        "nrmi",
-        "npo",
-    }
-    vmin, vmax = (0, 1) if metric in normalized_metrics else (0, None)
+    # Identificar colunas de janela conforme a comparação
+    if model_x == model_y:
+        # Comparação homogênea: _row_window e _col_window
+        row_key = f"{model_x}_row_window"
+        col_key = f"{model_y}_col_window"
+    else:
+        # Comparação heterogênea: _window direto
+        row_key = f"{model_x}_window"
+        col_key = f"{model_y}_window"
 
-    sns.heatmap(
-        pivot,
-        annot=True,
-        fmt=".2f",
-        cmap=getattr(cc.cm, "bgy"),
-        vmin=vmin,
-        vmax=vmax,
-        linewidths=0.5,
-        cbar=True,
-    )
-
-    ax = plt.gca()
-    nrows, ncols = pivot.shape
-    n = min(nrows, ncols)
-    for i in range(n):
-        # corrigindo pelo eixo y invertido
-        ax.add_patch(
-            plt.Rectangle(
-                (i, nrows - 1 - i), 1, 1, fill=False, edgecolor="red", lw=2
-            )
+    if row_key not in df.columns or col_key not in df.columns:
+        print(
+            f"[WARN] Colunas esperadas não encontradas para {model_x} vs {model_y}",
+            file=sys.stderr,
         )
+        print(f"[HINT] Encontrado: {df.columns.tolist()}", file=sys.stderr)
+        return False
 
-    plt.title(f"Mean {metric.upper()} — {n_samples} samples")
-    plt.ylabel(f"{model_x.upper()} window")
-    plt.xlabel(f"{model_y.upper()} window")
-    plt.tight_layout()
+    # Derivar métricas disponíveis
+    metric_cols = [c for c in df.columns if c not in {row_key, col_key}]
 
-    out_png = parquet_file.parent / f"mean_{metric}.png"
-    plt.savefig(out_png)
-    plt.close()
-    print(f"Heatmap salvo: {out_png}")
+    if not metric_cols:
+        print(f"[WARN] Nenhuma métrica encontrada", file=sys.stderr)
+        return False
+
+    # Diretório de saída
+    out_dir = config_dir / "analysis" / f"{model_x}_vs_{model_y}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"[PLOT] Plotando {len(metric_cols)} métricas...")
+
+    # Plotar cada métrica
+    success_count = 0
+    for metric in metric_cols:
+        try:
+            # Criar pivot table (MÉDIA JÁ CALCULADA)
+            pivot = df.pivot(index=row_key, columns=col_key, values=metric)
+
+            # Ordenar janelas
+            rows_sorted = sorted(pivot.index.unique(), key=_window_sort_key)
+            cols_sorted = sorted(pivot.columns.unique(), key=_window_sort_key)
+            pivot = pivot.loc[rows_sorted, cols_sorted]
+
+            # Definir escala apropriada
+            if metric in {
+                "nvi",
+                "nmi",
+                "anmi",
+                "ami",
+                "ari",
+                "rmi",
+                "nrmi",
+                "npo",
+            }:
+                vmin, vmax = 0, 1
+                cmap = "viridis"
+            elif metric == "vi":
+                vmin, vmax = None, None
+                cmap = "RdYlGn_r"  # Vermelho (alto) para Verde (baixo)
+            else:
+                vmin, vmax = None, None
+                cmap = "viridis"
+
+            # Plotar heatmap
+            plt.figure(figsize=(10, 8))
+            sns.heatmap(
+                pivot,
+                annot=True,
+                fmt=".3f",
+                cmap=cmap,
+                vmin=vmin,
+                vmax=vmax,
+                cbar_kws={"label": metric.upper()},
+                linewidths=0.5,
+            )
+
+            plt.title(
+                f"{metric.upper()}: {model_x.upper()} vs {model_y.upper()} (MÉDIA)"
+            )
+            plt.xlabel(f"{model_y.upper()} Window")
+            plt.ylabel(f"{model_x.upper()} Window")
+            plt.tight_layout()
+
+            # Salvar
+            out_file = out_dir / f"heatmap_{metric}_avg.png"
+            plt.savefig(out_file, dpi=150, bbox_inches="tight")
+            plt.close()
+
+            print(f"✓ Heatmap salvo: {out_file}")
+            success_count += 1
+
+        except Exception as e:
+            print(f"✗ Erro ao plotar {metric}: {e}", file=sys.stderr)
+            plt.close()
+            continue
+
+    return success_count > 0
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Gera os heatmaps médios de métricas por CONFIG."
-    )
-    parser.add_argument(
-        "--seed",
-        type=str,
-        help="processa apenas o diretório seed_X informado (ex.: 1754340049)",
+        description="Plota heatmaps de MÉDIAS para todas as comparações (NOVA ESTRUTURA)."
     )
     parser.add_argument(
         "--config",
         "-c",
         type=int,
-        help="Número da CONFIG a processar (ex: 1 para config_001). Se omitido, processa todas.",
-        default=None,
-    )
-    parser.add_argument(
-        "--base",
-        type=Path,
-        default=Path("../outputs/partitions"),
-        help="raiz das saídas de partição",
+        required=True,
+        help="Número da CONFIG (ex: 1 para conf/0001)",
     )
     args = parser.parse_args()
 
-    for sample_dir in sorted(args.base.glob("*")):
-        if not sample_dir.is_dir():
-            continue
-        n_samples = sample_dir.name
-        print(f"Amostras: {n_samples}")
+    # >>> NOVA ESTRUTURA: conf/NNNN
+    base = Path("../outputs/conf")
 
-        for seed_dir in sorted(sample_dir.glob("seed_*")):
-            if not seed_dir.is_dir():
-                continue
+    if not base.exists():
+        print(
+            f"[ERROR] Diretório base não encontrado: {base}", file=sys.stderr
+        )
+        print(
+            f"[HINT] Execute primeiro: python3 -m word_embedding.window_experiments",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
-            # --- filtro pelo argumento --seed -----------------
-            if args.seed and seed_dir.name != f"seed_{args.seed}":
-                continue
-            # --------------------------------------------------
+    config_dir = base / f"{args.config:04d}"
 
-            print(f"  Seed: {seed_dir.name}")
+    if not config_dir.exists():
+        print(f"[ERROR] Config não encontrada: {config_dir}", file=sys.stderr)
+        available = sorted([d.name for d in base.glob("????")])
+        if available:
+            print(
+                f"[HINT] Configs disponíveis: {', '.join(available)}",
+                file=sys.stderr,
+            )
+        sys.exit(1)
 
-            # >>> NOVO: iterar por CONFIG dentro da seed
-            if args.config is None:
-                config_dirs = sorted(seed_dir.glob("config_*"))
-            else:
-                config_dir = seed_dir / f"config_{args.config:03d}"
-                config_dirs = [config_dir] if config_dir.exists() else []
+    print(f"\n{'='*70}")
+    print(f"Plotando heatmaps de MÉDIA para todas as comparações")
+    print(f"Config: {config_dir.name}")
+    print(f"{'='*70}")
 
-            if not config_dirs:
-                print(
-                    f"    [WARN] Nenhuma CONFIG encontrada em {seed_dir.name}"
-                )
-                continue
+    # >>> As 3 comparações
+    comparisons = [
+        ("sbm", "w2v"),
+        ("sbm", "sbm"),
+        ("w2v", "w2v"),
+    ]
 
-            for config_dir in config_dirs:
-                print(f"    Config: {config_dir.name}")
+    all_success = True
+    for model_x, model_y in comparisons:
+        print(f"\n### {model_x.upper()} vs {model_y.upper()}")
+        success = plot_average_heatmaps(config_dir, model_x, model_y)
+        if not success:
+            all_success = False
 
-                for pq in config_dir.glob("analysis/*/running_mean.parquet"):
-                    df_prev = pd.read_parquet(pq, columns=None)
-                    metrics = set(df_prev.columns) - {
-                        "run",
-                        "window",
-                        "model",
-                        "term",
-                        "label",
-                        "w2v_col_window",
-                        "w2v_row_window",
-                        "w2v_window",
-                        "sbm_window",
-                        "sbm_row_window",
-                        "sbm_col_window",
-                    }
-                    for met in metrics:
-                        plot_mean_heatmap(pq, met, n_samples)
+    if all_success:
+        print(f"\n✓ Todos os heatmaps de MÉDIA gerados com sucesso!")
+        sys.exit(0)
+    else:
+        print(f"\n✗ Alguns heatmaps falharam", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

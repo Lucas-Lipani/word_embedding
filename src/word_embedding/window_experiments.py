@@ -22,15 +22,12 @@ def _get_vertex_blocks_map(state, level: int = 0):
     Return a vertex->block PropertyMap for BlockState/LayeredBlockState/NestedBlockState.
     For nested states, 'level' selects which hierarchy level to read (0 = base/original vertices).
     """
-    # Nested: pick the requested level and extract its blocks map
     if hasattr(state, "get_bs"):
         bs = state.get_bs()
         if not bs:
             raise ValueError("NestedBlockState sem níveis (get_bs() vazio).")
-        # nível base particiona os vértices originais
         return bs[level]
 
-    # Não-nested (BlockState/LayeredBlockState)
     if hasattr(state, "get_blocks"):
         try:
             return state.get_blocks()
@@ -42,14 +39,15 @@ def _get_vertex_blocks_map(state, level: int = 0):
     raise TypeError(f"Tipo de state não suportado: {type(state)}")
 
 
-def count_connected_term_blocks(state, g, seed=None):
+def count_connected_term_blocks(state, g):
     """
-    Retorna a quantidade de blocos conectados que contêm TERMOS (tipo==1),
-    apenas para log/diagnóstico. Aceita seed só para logging.
+    Retorna:
+    - Número de blocos conectados que contêm TERMOS (tipo==1)
+    - Número de blocos conectados que contêm JANELAS (tipo==5)
+    - Dict com contagem de blocos por tipo
     """
     blocks_map = _get_vertex_blocks_map(state)
 
-    # Conjunto de blocos que possuem ao menos 1 vértice com grau > 0
     connected = {
         int(blocks_map[v])
         for v in g.vertices()
@@ -57,15 +55,12 @@ def count_connected_term_blocks(state, g, seed=None):
     }
 
     blocks_by_type = defaultdict(set)
-    term_blocks = set()
 
     for v in g.vertices():
         b = int(blocks_map[v])
         t = int(g.vp["tipo"][v])
         if b in connected:
             blocks_by_type[t].add(b)
-            if t == 1:  # Termo
-                term_blocks.add(b)
 
     print("\n[Depuração] Blocos conectados por tipo:")
     for t, bls in sorted(blocks_by_type.items()):
@@ -74,14 +69,14 @@ def count_connected_term_blocks(state, g, seed=None):
             1: "Termo",
             3: "Janela",
             4: "Contexto",
-            5: "Jan-Slide",
+            5: "JanelaSlide",
         }.get(t, f"Tipo {t}")
         print(f"  - {nome:<10}: {len(bls)} blocos")
 
-    if seed is not None:
-        print(f"[DEBUG] Seed passada para count_connected_term_blocks: {seed}")
+    term_blocks = len(blocks_by_type.get(1, set()))
+    window_blocks = len(blocks_by_type.get(5, set()))
 
-    return len(term_blocks)
+    return term_blocks, window_blocks, dict(blocks_by_type)
 
 
 def tokenize_abstracts(df, nlp):
@@ -114,14 +109,8 @@ def word_embedding(
     nested=False,
 ):
     """
-    Para cada janela em window_list:
-      - constrói grafos de acordo com graph_type
-      - roda SBM no grafo de entrada
-      - salva linhas no parquet para Termos(1), Janelas(3/5), Documentos(0), etc.
-
-    :param graph_type: Tipo de grafo ("Document-SlideWindow-Term", "Document-Term", etc.)
+    Retorna também as informações do grafo, blocos e W2V.
     """
-    # Treina (ou carrega) W2V por janela
     w2v_models = {
         w: w2vec_kmeans.get_or_train_w2v_model({}, w, df_docs, nlp)
         for w in window_list
@@ -136,17 +125,25 @@ def word_embedding(
                 df_docs, nlp, sbm_window
             )
         elif graph_type == "Document-Term":
-            g_full = graph_build.build_doc_term_graph(df_docs, nlp)
+            # TODO: implementar build_doc_term_graph
+            g_full = graph_build.extract_doc_term_graph(
+                graph_build.build_window_graph_and_sliding(
+                    df_docs, nlp, sbm_window
+                )[0]
+            )
             g_sbm_input = g_full
         elif graph_type == "Document-Context-Window-Term":
-            g_full, g_sbm_input = graph_build.build_context_window_term_graph(
+            g_full, _ = graph_build.build_window_graph_and_sliding(
                 df_docs, nlp, sbm_window
+            )
+            g_win_term = graph_build.extract_window_term_graph(g_full)
+            g_sbm_input = graph_build.extract_context_window_term_graph(
+                g_win_term
             )
         elif graph_type == "Document-Window-Term":
             g_full = graph_build.build_window_graph(
                 graph_build.initialize_graph(), df_docs, nlp, sbm_window
             )
-            # Extrair janelas + termos para SBM
             g_sbm_input = graph_build.extract_window_term_graph(g_full)
         else:
             raise ValueError(f"graph_type desconhecido: {graph_type}")
@@ -154,20 +151,64 @@ def word_embedding(
         # Aplicar SBM no grafo apropriado
         state = graph_sbm.sbm(g_sbm_input, n_blocks=None, nested=nested)
 
-        # Info de conectividade p/ escolher k de W2V
+        # >>> EXTRAIR ENTROPY DO SBM
+        try:
+            sbm_entropy = state.entropy()
+            print(f"[SBM] Entropy: {sbm_entropy:.4f}")
+        except Exception as e:
+            print(f"[WARN] Erro ao extrair entropy: {e}")
+            sbm_entropy = None
+
+        # >>> NOVO: Contar vértices PRÉ-SBM (estrutura do grafo)
+        vertices_pre_sbm = defaultdict(int)
+        for v in g_sbm_input.vertices():
+            vertices_pre_sbm[int(g_sbm_input.vp["tipo"][v])] += 1
+
+        print(f"\n[INFO] Estrutura do grafo PRÉ-SBM:")
+        for tipo in sorted(vertices_pre_sbm.keys()):
+            tipo_names = {0: "Doc", 1: "Termo", 3: "Janela", 5: "JanelaSlide"}
+            print(
+                f"  {tipo_names.get(tipo, f'Tipo {tipo}')}: {vertices_pre_sbm[tipo]}"
+            )
+
+        # >>> NOVO: Contar blocos PÓS-SBM
+        term_blocks, window_blocks, blocks_by_type_set = (
+            count_connected_term_blocks(state, g_sbm_input)
+        )
+
+        # Converter blocks_by_type_set para contagem (quantos blocos por tipo)
+        blocks_post_sbm = {
+            tipo: len(block_set)
+            for tipo, block_set in blocks_by_type_set.items()
+        }
+
         if n_blocks is not None:
             k_blocks = n_blocks
             print(f"Usando número fixo de blocos (W2V k) = {k_blocks}")
         else:
-            k_blocks = count_connected_term_blocks(
-                state, g_sbm_input, seed=fixed_seed
-            )
+            k_blocks = term_blocks
+
+        # >>> NOVO: Extrair informações do W2V
+        w2v_model = w2v_models[sbm_window]
+        w2v_sg = 1  # Skip-gram (conforme train_word2vec)
+        w2v_window = 10000 if sbm_window == "full" else int(sbm_window)
+        w2v_vector_size = 100  # conforme train_word2vec
 
         # ====== Extrai labels do SBM no grafo de entrada ======
         blocks_vec = _get_vertex_blocks_map(state).a
 
         sbm_rows = []
         term_to_block = {}
+
+        # >>> DEBUG: contar vértices por tipo no grafo_sbm_input
+        vertices_by_tipo = defaultdict(int)
+        for v in g_sbm_input.vertices():
+            vertices_by_tipo[int(g_sbm_input.vp["tipo"][v])] += 1
+
+        print(f"\n[DEBUG] Vértices em g_sbm_input por tipo:")
+        for tipo, count in sorted(vertices_by_tipo.items()):
+            tipo_names = {0: "Doc", 1: "Termo", 5: "JanelaSlide"}
+            print(f"  Tipo {tipo} ({tipo_names.get(tipo, '?')}): {count}")
 
         for v in g_sbm_input.vertices():
             t = int(g_sbm_input.vp["tipo"][v])
@@ -190,27 +231,27 @@ def word_embedding(
 
             sbm_rows.append(row)
 
-        # ====== Documentos (tipo 0) — label por maioria dos labels dos termos do doc ======
+        print(f"[DEBUG] sbm_rows gerados: {len(sbm_rows)}")
+
+        # ====== Documentos (tipo 0) — label por maioria ======
         doc_rows = []
         for v_doc in g_full.vertices():
             if int(g_full.vp["tipo"][v_doc]) != 0:
                 continue
 
             term_labels = []
-            # Busca termos conectados a este documento (caminhos variáveis por tipo)
             for e_doc in v_doc.all_edges():
                 neighbor = (
                     e_doc.target()
                     if e_doc.source() == v_doc
                     else e_doc.source()
                 )
-                if int(g_full.vp["tipo"][neighbor]) == 1:  # Termo direto
+                if int(g_full.vp["tipo"][neighbor]) == 1:
                     tname = g_full.vp["name"][neighbor]
                     lbl = term_to_block.get(tname)
                     if lbl is not None:
                         term_labels.append(lbl)
                 else:
-                    # Procura termos via intermediários (janelas, contexto, etc.)
                     for e_inter in neighbor.all_edges():
                         v_term = (
                             e_inter.target()
@@ -251,6 +292,7 @@ def word_embedding(
                 }
             )
 
+        print(f"[DEBUG] doc_rows gerados: {len(doc_rows)}")
         sbm_rows.extend(doc_rows)
 
         # ====== W2V clustering (somente termos) ======
@@ -277,7 +319,9 @@ def word_embedding(
                 }
             )
 
-        yield sbm_rows, w2v_rows
+        print(f"[DEBUG] w2v_rows gerados: {len(w2v_rows)}")
+
+        yield sbm_rows, w2v_rows, sbm_entropy, k_blocks, vertices_pre_sbm, blocks_post_sbm, term_blocks, window_blocks, k_blocks, w2v_sg, w2v_window, w2v_vector_size
 
 
 def main():
@@ -298,13 +342,13 @@ def main():
         "--n_blocks",
         type=int,
         default=None,
-        help="Número fixo de blocos para o W2V. Se omitido, o W2V decide baseado no SBM.",
+        help="Número fixo de blocos para o W2V.",
     )
     parser.add_argument(
         "--nested",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="Usa SBM em modo nested (layered). Use --no-nested para desativar.",
+        help="Usa SBM em modo nested.",
     )
     parser.add_argument(
         "--window",
@@ -350,7 +394,7 @@ def main():
     else:
         WINDOW_LIST = [5, 20, 40, "full"]
 
-    OUT_PARTITIONS = Path("../outputs/partitions")
+    OUT_CONF = Path("../outputs/conf")
 
     # Carrega spaCy e dados
     nlp = spacy.load("en_core_web_sm")
@@ -364,55 +408,87 @@ def main():
         print(f"Janelas: {WINDOW_LIST}")
         print(f"Tipo de Grafo: {args.graph_type}")
 
-        partitions_rows = []
-
-        # Uma única chamada para word_embedding com graph_type como parâmetro
-        for sbm_rows, w2v_rows in word_embedding(
+        # >>> MODIFICADO: processar cada janela SEPARADAMENTE
+        for (
+            sbm_rows,
+            w2v_rows,
+            sbm_entropy,
+            k_blocks,
+            vertices_pre_sbm,
+            blocks_post_sbm,
+            term_blocks,
+            window_blocks,
+            w2v_n_clusters,
+            w2v_sg,
+            w2v_window,
+            w2v_vector_size,
+        ) in word_embedding(
             df_docs,
             nlp,
             WINDOW_LIST,
-            graph_type=args.graph_type,  # ← PARÂMETRO
+            graph_type=args.graph_type,
             n_blocks=args.n_blocks,
             fixed_seed=fixed_seed,
             nested=args.nested,
         ):
+            # sbm_rows e w2v_rows já estão filtrados por uma ÚNICA janela
+            # (vêm do yield dentro de word_embedding)
+
+            partitions_rows = []
             partitions_rows.extend(sbm_rows)
             partitions_rows.extend(w2v_rows)
 
-        partitions_df = pd.DataFrame(partitions_rows)
+            partitions_df = pd.DataFrame(partitions_rows)
 
-        # normalização de tipos para parquet
-        partitions_df["window"] = partitions_df["window"].astype(str)
-        partitions_df["label"] = pd.to_numeric(
-            partitions_df["label"], errors="coerce"
-        ).astype("Int64")
-        if "label_members" in partitions_df.columns:
-            partitions_df["label_members"] = partitions_df[
-                "label_members"
-            ].astype("string")
+            # Normalização de tipos para parquet
+            partitions_df["window"] = partitions_df["window"].astype(str)
+            partitions_df["label"] = pd.to_numeric(
+                partitions_df["label"], errors="coerce"
+            ).astype("Int64")
+            if "label_members" in partitions_df.columns:
+                partitions_df["label_members"] = partitions_df[
+                    "label_members"
+                ].astype("string")
 
-        # salva por modelo/janela
-        for model in ["sbm", "w2v"]:
-            for window in WINDOW_LIST:
-                df_model = partitions_df[
-                    (partitions_df["model"] == model)
-                    & (partitions_df["window"] == str(window))
-                ]
-                if not df_model.empty:
-                    idx, file = results_io.save_partitions_only(
-                        base_dir=OUT_PARTITIONS,
-                        n_samples=n_samples,
-                        seed=fixed_seed,
-                        model_name=model,
-                        window=window,
-                        partitions_df=df_model,
-                        n_blocks=args.n_blocks,
-                        nested=args.nested,
-                        graph_type=args.graph_type,  # ← SALVA NO CONFIG
-                    )
-                    print(
-                        f"{model.upper()}_J{window} run {idx:03d} salvo em {file}"
-                    )
+            # Calcular número de blocos de termos
+            n_term_blocks = term_blocks if term_blocks else 0
+
+            # >>> SALVAR PARQUET PARA ESTA JANELA
+            config_idx, run_idx, partition_file = (
+                results_io.save_partitions_by_config(
+                    base_conf_dir=OUT_CONF,
+                    n_samples=n_samples,
+                    seed=fixed_seed,
+                    graph_type=args.graph_type,
+                    nested=args.nested,
+                    n_blocks=args.n_blocks,
+                    run_idx=r + 1,
+                    partitions_df=partitions_df,
+                    sbm_entropy=sbm_entropy,
+                    vertices_pre_sbm=(
+                        dict(vertices_pre_sbm) if vertices_pre_sbm else None
+                    ),
+                    blocks_post_sbm=(
+                        dict(blocks_post_sbm) if blocks_post_sbm else None
+                    ),
+                    term_blocks_count=term_blocks,
+                    window_blocks_count=window_blocks,
+                    w2v_n_clusters=w2v_n_clusters,
+                    w2v_sg=w2v_sg,
+                    w2v_window=w2v_window,
+                    w2v_vector_size=w2v_vector_size,
+                )
+            )
+
+            # Extrair janela do parquet para log
+            window_val = (
+                partitions_df["window"].iloc[0]
+                if len(partitions_df) > 0
+                else "?"
+            )
+            print(
+                f"[SAVED] Config {config_idx:04d} | Run {run_idx:04d} | Window {window_val} | {partition_file}"
+            )
 
 
 if __name__ == "__main__":

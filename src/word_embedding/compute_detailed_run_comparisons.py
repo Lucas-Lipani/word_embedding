@@ -14,6 +14,7 @@ from sklearn.metrics import adjusted_rand_score
 
 
 def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray) -> dict:
+    """Compara duas séries de rótulos de partição."""
     return {
         "vi": variation_information(labels_a, labels_b, norm=False),
         "nvi": variation_information(labels_a, labels_b, norm=True),
@@ -37,11 +38,8 @@ def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray) -> dict:
     }
 
 
-def _window_sort_key(w):
-    return float("inf") if w == "full" else int(w)
-
-
 def plot_detailed_heatmap(df: pd.DataFrame, metric: str, out_path: Path):
+    """Plota heatmap de uma métrica."""
     pivot = df.pivot(index="run_x", columns="run_y", values=metric)
     plt.figure(figsize=(10, 8))
     vmin, vmax = (
@@ -52,55 +50,70 @@ def plot_detailed_heatmap(df: pd.DataFrame, metric: str, out_path: Path):
     sns.heatmap(
         pivot, annot=True, fmt=".2f", cmap="viridis", vmin=vmin, vmax=vmax
     )
-    plt.title(f"{metric.upper()} — {out_path.parent.name}")
+    plt.title(f"{metric.upper()}")
     plt.tight_layout()
     plt.savefig(out_path)
     plt.close()
 
 
 def compare_runs_detailed(
-    part_x, part_y, model_x, model_y, window_x, window_y, out_dir
+    config_dir: Path, model_x: str, model_y: str, window_x: str, window_y: str
 ):
-    dfs_x, dfs_y = [], []
-    for pf in part_x:
-        try:
-            run_idx = int(pf.stem.split("_run")[1].split("_")[0])
-        except ValueError:
-            continue
-        df = pd.read_parquet(pf)
-        df["run"] = run_idx
-        dfs_x.append(df)
+    """
+    Compara runs de dois modelos/janelas diferentes dentro de UMA config.
+    NOVA ESTRUTURA: conf/NNNN/run/RRRR/partition.parquet
+    """
+    out_dir = (
+        config_dir
+        / "analysis_detailed"
+        / f"{model_x}_J{window_x}_vs_{model_y}_J{window_y}"
+    )
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    for pf in part_y:
-        try:
-            run_idx = int(pf.stem.split("_run")[1].split("_")[0])
-        except ValueError:
-            continue
-        df = pd.read_parquet(pf)
-        df["run"] = run_idx
-        dfs_y.append(df)
+    # Carregar partitions de TODOS os runs
+    run_dirs = sorted(config_dir.glob("run/????"))
 
-    if not dfs_x or not dfs_y:
-        print("[WARN] Sem dados suficientes para comparar.")
+    if not run_dirs:
+        print(f"    [WARN] Nenhum run encontrado em {config_dir.name}")
         return
 
-    data_x = pd.concat(dfs_x, ignore_index=True)
-    data_y = pd.concat(dfs_y, ignore_index=True)
+    dfs = []
+    for run_dir in run_dirs:
+        partition_file = run_dir / "partition.parquet"
+        if not partition_file.exists():
+            continue
 
-    data_x = data_x[
-        (data_x["model"] == model_x)
-        & (data_x["window"].astype(str) == str(window_x))
+        try:
+            run_idx = int(run_dir.name)
+        except ValueError:
+            continue
+
+        df = pd.read_parquet(partition_file)
+        df["run"] = run_idx
+        dfs.append(df)
+
+    if not dfs:
+        print(f"    [WARN] Nenhum parquet encontrado em {config_dir.name}")
+        return
+
+    data = pd.concat(dfs, ignore_index=True)
+    data["window"] = data["window"].astype(str)
+
+    # Filtrar por modelo e janela
+    data_x = data[
+        (data["model"] == model_x) & (data["window"] == str(window_x))
     ]
-    data_y = data_y[
-        (data_y["model"] == model_y)
-        & (data_y["window"].astype(str) == str(window_y))
+    data_y = data[
+        (data["model"] == model_y) & (data["window"] == str(window_y))
     ]
 
     runs_x = sorted(data_x["run"].unique())
     runs_y = sorted(data_y["run"].unique())
 
     if not runs_x or not runs_y:
-        print("[WARN] Não há runs após o filtro.")
+        print(
+            f"    [WARN] Sem dados para {model_x}_J{window_x} vs {model_y}_J{window_y}"
+        )
         return
 
     rows = []
@@ -117,7 +130,7 @@ def compare_runs_detailed(
             df_rx = data_x[data_x["run"] == rx]
             df_ry = data_y[data_y["run"] == ry]
 
-            # >>> MÉTRICAS APENAS SOBRE TERMOS (tipo==1) E term NÃO-NULO
+            # APENAS termos (tipo==1) com term não-nulo
             df_rx_terms = df_rx[
                 (df_rx["tipo"] == 1) & (df_rx["term"].notna())
             ].set_index("term")
@@ -132,35 +145,40 @@ def compare_runs_detailed(
             labels_x = df_rx_terms.loc[common]["label"].values
             labels_y = df_ry_terms.loc[common]["label"].values
 
-            metrics = _compare_metrics(labels_x, labels_y)
-            row = {"run_x": rx, "run_y": ry}
-            row.update(metrics)
-            rows.append(row)
+            try:
+                metrics = _compare_metrics(labels_x, labels_y)
+                row = {"run_x": rx, "run_y": ry}
+                row.update(metrics)
+                rows.append(row)
+            except ValueError:
+                continue
 
     if not rows:
         print(
-            f"[WARN] Sem comparações válidas entre {model_x}_J{window_x} e {model_y}_J{window_y}."
+            f"    [WARN] Sem comparações válidas para {model_x}_J{window_x} vs {model_y}_J{window_y}"
         )
         return
 
     df_result = pd.DataFrame(rows)
     df_result.to_parquet(out_dir / "metrics.parquet")
+    print(f"      metrics salvo: {out_dir / 'metrics.parquet'}")
 
-    for metric in rows[0].keys():
-        if metric in {"run_x", "run_y"}:
-            continue
-        plot_detailed_heatmap(df_result, metric, out_dir / f"{metric}.png")
+    # Plotar heatmaps de cada métrica
+    for metric in df_result.columns:
+        if metric not in {"run_x", "run_y"}:
+            plot_detailed_heatmap(df_result, metric, out_dir / f"{metric}.png")
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--samples", type=str, required=True)
-    parser.add_argument("--seed", type=str, required=True)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Comparações detalhadas entre runs (NOVA ESTRUTURA)."
+    )
     parser.add_argument(
         "--config",
+        "-c",
         type=int,
-        default=1,
-        help="Número da CONFIG (ex: 1 para config_001)",
+        required=True,
+        help="Número da CONFIG (ex: 1)",
     )
     parser.add_argument(
         "--models", nargs="+", choices=["sbm", "w2v"], required=True
@@ -174,35 +192,25 @@ def main():
     elif len(args.models) == 2:
         model_x, model_y = args.models
     else:
-        raise ValueError(
-            "--models deve conter 1 ou 2 valores: ex: sbm ou sbm w2v"
-        )
+        raise ValueError("--models deve ter 1 ou 2 valores")
 
-    # NOVA ESTRUTURA COM CONFIG
-    base = (
-        Path("../outputs/partitions")
-        / args.samples
-        / f"seed_{args.seed}"
-        / f"config_{args.config:03d}"
-    )
-    part_x = sorted(
-        (base / f"{model_x}_J{args.window_x}").glob("partitions_run*.parquet")
-    )
-    part_y = sorted(
-        (base / f"{model_y}_J{args.window_y}").glob("partitions_run*.parquet")
-    )
+    # NOVA ESTRUTURA: conf/NNNN
+    base = Path("../outputs/conf")
 
-    out_dir = (
-        base
-        / "analysis_detailed"
-        / f"{model_x}_J{args.window_x}_vs_{model_y}_J{args.window_y}"
-    )
-    out_dir.mkdir(parents=True, exist_ok=True)
+    if not base.exists():
+        print(f"[ERROR] Base não encontrada: {base}")
+        exit(1)
 
+    config_dir = base / f"{args.config:04d}"
+
+    if not config_dir.exists():
+        print(f"[ERROR] Config não encontrada: {config_dir}")
+        exit(1)
+
+    print(f"Config: {config_dir.name}")
+    print(
+        f"  {model_x.upper()} J{args.window_x} × {model_y.upper()} J{args.window_y}"
+    )
     compare_runs_detailed(
-        part_x, part_y, model_x, model_y, args.window_x, args.window_y, out_dir
+        config_dir, model_x, model_y, args.window_x, args.window_y
     )
-
-
-if __name__ == "__main__":
-    main()

@@ -1,7 +1,7 @@
 from pathlib import Path
-from glob import glob
 import pandas as pd
 import argparse
+import sys
 import numpy as np
 from graph_tool.all import (
     variation_information,
@@ -13,17 +13,12 @@ from sklearn.metrics import adjusted_rand_score
 
 
 def _window_sort_key(w):
-    """
-    Ordena janelas de forma que 'full' fique no final.
-    """
+    """Ordena janelas de forma que 'full' fique no final."""
     return float("inf") if w == "full" else int(w)
 
 
 def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray) -> dict:
-    """
-    Compara duas séries de rótulos de partição e
-    retorna um dicionário de métricas.
-    """
+    """Compara duas séries de rótulos de partição e retorna um dicionário de métricas."""
     if len(labels_a) != len(labels_b):
         raise ValueError(
             f"As duas séries de rótulos devem ter o mesmo comprimento. "
@@ -56,7 +51,9 @@ def compute_config(config_dir: Path, model_x: str, model_y: str):
     """
     Processa UMA CONFIG específica, comparando modelo_x vs modelo_y.
 
-    :param config_dir: Caminho da pasta config_NNN (ex: 5/seed_42/config_001/)
+    NOVA ESTRUTURA: conf/NNNN/run/RRRR/partition.parquet
+
+    :param config_dir: Caminho da pasta conf/NNNN
     :param model_x: Modelo a comparar ("sbm" ou "w2v")
     :param model_y: Modelo a comparar ("sbm" ou "w2v")
     """
@@ -64,27 +61,28 @@ def compute_config(config_dir: Path, model_x: str, model_y: str):
     out_root = config_dir / "analysis" / f"{model_x}_vs_{model_y}"
     out_root.mkdir(parents=True, exist_ok=True)
 
-    # Encontra todas as pastas de partições para cada modelo
-    part_x_dirs = sorted(Path(config_dir).glob(f"{model_x}_J*"))
-    part_y_dirs = sorted(Path(config_dir).glob(f"{model_y}_J*"))
+    # >>> NOVO: carregar partitions de conf/NNNN/run/RRRR/partition.parquet
+    run_dirs = sorted(config_dir.glob("run/????"))
 
-    if not part_x_dirs or not part_y_dirs:
-        print(
-            f"    [WARN] Sem dados para {model_x} ou {model_y} em {config_dir.name}"
-        )
+    if not run_dirs:
+        print(f"    [WARN] Sem runs encontradas em {config_dir.name}")
         return
 
     # Carrega todos os parquets
     dfs = []
-    for model_dir in part_x_dirs + part_y_dirs:
-        for pf in sorted(model_dir.glob("partitions_run*.parquet")):
-            try:
-                run_idx = int(pf.stem.split("_run")[1].split("_")[0])
-            except ValueError:
-                continue
-            df = pd.read_parquet(pf)
-            df["run"] = run_idx
-            dfs.append(df)
+    for run_dir in run_dirs:
+        partition_file = run_dir / "partition.parquet"
+        if not partition_file.exists():
+            continue
+
+        try:
+            run_idx = int(run_dir.name)
+        except ValueError:
+            continue
+
+        df = pd.read_parquet(partition_file)
+        df["run"] = run_idx
+        dfs.append(df)
 
     if not dfs:
         print(f"    [WARN] Nenhum parquet encontrado em {config_dir.name}")
@@ -190,65 +188,118 @@ def compute_config(config_dir: Path, model_x: str, model_y: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Compute mean comparison metrics por CONFIG."
-    )
-    parser.add_argument(
-        "--seed",
-        "-s",
-        help="Número ou nome da seed (ex: 42 ou seed_42). Se omitido, processa todas.",
-        default=None,
+        description="Compute mean comparison metrics per CONFIG (NOVA ESTRUTURA)."
     )
     parser.add_argument(
         "--config",
         "-c",
         type=int,
-        help="Número da CONFIG a processar (ex: 1 para config_001). Se omitido, processa todas.",
+        help="Número da CONFIG a processar (ex: 1 para config_0001)",
+        required=True,
+    )
+    parser.add_argument(
+        "--seed",
+        "-s",
+        type=str,
         default=None,
+        help="Seed (ex: 42 ou seed_42). Opcional, apenas para referência.",
     )
     args = parser.parse_args()
 
-    base = Path("../outputs/partitions")
+    # >>> NOVA ESTRUTURA: conf/NNNN/run/RRRR
+    base = Path("../outputs/conf")
+
+    # >>> VALIDAÇÃO: verificar se base existe
+    if not base.exists():
+        print(
+            f"[ERROR] Diretório base não encontrado: {base}", file=sys.stderr
+        )
+        print(
+            f"[HINT] Execute primeiro: python3 -m word_embedding.window_experiments",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Encontrar a config certa
+    config_dir = base / f"{args.config:04d}"
+
+    # >>> VALIDAÇÃO: verificar se config existe
+    if not config_dir.exists():
+        print(f"[ERROR] Config não encontrada: {config_dir}", file=sys.stderr)
+        available = sorted([d.name for d in base.glob("????")])
+        if available:
+            print(
+                f"[HINT] Configs disponíveis: {', '.join(available)}",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"[HINT] Nenhuma config encontrada em {base}", file=sys.stderr
+            )
+        sys.exit(1)
+
+    # Verificar se config tem runs
+    run_dirs = list(config_dir.glob("run/????"))
+
+    # >>> VALIDAÇÃO: verificar se há runs
+    if not run_dirs:
+        print(
+            f"[ERROR] Nenhum run encontrado em {config_dir.name}",
+            file=sys.stderr,
+        )
+        print(
+            f"[HINT] Execute: python3 -m word_embedding.window_experiments",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # >>> NOVO: Validar seed se fornecida
+    if args.seed is not None:
+        seed_name = (
+            args.seed
+            if str(args.seed).startswith("seed_")
+            else f"seed_{args.seed}"
+        )
+        # Verificar se seed está contida em algum config.json
+        found_seed = False
+        try:
+            import json
+
+            config_file = config_dir / "config.json"
+            if config_file.exists():
+                with open(config_file, "r") as f:
+                    cfg = json.load(f)
+                    saved_seed = cfg.get("corpus", {}).get("seed")
+                    if saved_seed is not None:
+                        try:
+                            if int(saved_seed) == int(args.seed):
+                                found_seed = True
+                        except (ValueError, TypeError):
+                            pass
+
+            if not found_seed:
+                print(
+                    f"[ERROR] Seed {args.seed} não encontrada em config {args.config:04d}",
+                    file=sys.stderr,
+                )
+                if config_file.exists():
+                    with open(config_file, "r") as f:
+                        cfg = json.load(f)
+                        saved_seed = cfg.get("corpus", {}).get("seed")
+                        print(
+                            f"[HINT] Config {args.config:04d} usa seed: {saved_seed}",
+                            file=sys.stderr,
+                        )
+                sys.exit(1)
+        except Exception as e:
+            print(f"[WARN] Erro ao validar seed: {e}", file=sys.stderr)
+
+    print(f"Config: {config_dir.name}")
+    if args.seed:
+        print(f"Seed: {args.seed}")
+
     comparisons = [("sbm", "w2v"), ("sbm", "sbm"), ("w2v", "w2v")]
 
-    for sample_dir in sorted(base.glob("*")):
-        if not sample_dir.is_dir():
-            continue
-        print(f"Amostras: {sample_dir.name}")
-
-        # Decide quais seeds percorrer
-        if args.seed is None:
-            seeds_to_check = sorted(sample_dir.glob("seed_*"))
-        else:
-            seed_name = (
-                args.seed
-                if str(args.seed).startswith("seed_")
-                else f"seed_{args.seed}"
-            )
-            seeds_to_check = [sample_dir / seed_name]
-
-        for seed_dir in seeds_to_check:
-            if not seed_dir.is_dir():
-                print(
-                    f"  [WARN] Seed {seed_dir.name} não encontrada para {sample_dir.name}"
-                )
-                continue
-            print(f"  Seed: {seed_dir.name}")
-
-            # >>> NOVO: iterar por CONFIG dentro da seed
-            if args.config is None:
-                config_dirs = sorted(seed_dir.glob("config_*"))
-            else:
-                config_dir = seed_dir / f"config_{args.config:03d}"
-                config_dirs = [config_dir] if config_dir.exists() else []
-
-            if not config_dirs:
-                print(
-                    f"    [WARN] Nenhuma CONFIG encontrada em {seed_dir.name}"
-                )
-                continue
-
-            for config_dir in config_dirs:
-                print(f"    Config: {config_dir.name}")
-                for model_x, model_y in comparisons:
-                    print(f"      {model_x.upper()} × {model_y.upper()}")
-                    compute_config(config_dir, model_x, model_y)
+    for model_x, model_y in comparisons:
+        print(f"  {model_x.upper()} × {model_y.upper()}")
+        compute_config(config_dir, model_x, model_y)
