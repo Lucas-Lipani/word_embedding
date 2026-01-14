@@ -327,7 +327,7 @@ def word_embedding(
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--runs", type=int, default=10, help="Nº de repetições"
+        "--runs", type=int, default=1, help="Nº de repetições"
     )
     parser.add_argument(
         "--samples", type=int, default=100, help="Nº de documentos amostrados"
