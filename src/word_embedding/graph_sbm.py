@@ -105,12 +105,12 @@ def sbm_with_fixed_term_blocks(g, n_term_blocks, init_method="random"):
             clabel[v] = -1
             free_block += 1
 
-    print(f"[DEBUG] Total de vértices: {total}")
-    print(f"[DEBUG] Contagem por tipo: {tipo_counts}")
-    print(f"[DEBUG] Total de blocos livres usados: {free_block}")
-    print(
-        f"[DEBUG] b_init size: {b_init.a.shape[0]}, clabel size: {clabel.a.shape[0]}"
-    )
+    # print(f"[DEBUG] Total de vértices: {total}")
+    # print(f"[DEBUG] Contagem por tipo: {tipo_counts}")
+    # print(f"[DEBUG] Total de blocos livres usados: {free_block}")
+    # print(
+    #     f"[DEBUG] b_init size: {b_init.a.shape[0]}, clabel size: {clabel.a.shape[0]}"
+    # )
 
     assert b_init.a.shape[0] == g.num_vertices()
     assert clabel.a.shape[0] == g.num_vertices()

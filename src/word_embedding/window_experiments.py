@@ -2,10 +2,10 @@ from pathlib import Path
 import time
 import argparse
 from collections import defaultdict, Counter
+import sys
 
 import pandas as pd
 import spacy
-from graph_tool.all import graph_draw as gt_draw
 
 from . import (
     graph_build,
@@ -327,10 +327,18 @@ def word_embedding(
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--runs", type=int, default=1, help="Nº de repetições"
+        "--runs",
+        "--run",
+        "--r",
+        type=int,
+        default=1,
+        help="Nº de repetições"
     )
     parser.add_argument(
-        "--samples", type=int, default=100, help="Nº de documentos amostrados"
+        "--samples",
+        type=int,
+        default=10,
+        help="Nº de documentos amostrados"
     )
     parser.add_argument(
         "--seed",
@@ -351,16 +359,9 @@ def main():
         help="Usa SBM em modo nested.",
     )
     parser.add_argument(
-        "--window",
-        "-w",
-        type=str,
-        default=None,
-        help="Uma única janela (ex.: -w 10 ou -w full)",
-    )
-    parser.add_argument(
         "--windows",
         nargs="+",
-        default=None,
+        default=[5, 10, 20, 40, "full"],
         help="Lista de janelas (ex.: --windows 5 20 40 full)",
     )
     parser.add_argument(
@@ -383,16 +384,24 @@ def main():
         args.seed if args.seed is not None else int(time.time()) % 2**32
     )
 
+    # >>> VALIDAÇÃO: seed deve estar entre 0 e 2^32-1
+    MAX_SEED = 2**32 - 1
+    if fixed_seed < 0 or fixed_seed > MAX_SEED:
+        print(
+            f"[ERROR] Seed {fixed_seed} está fora do intervalo [0, {MAX_SEED}]",
+            file=sys.stderr,
+        )
+        print(
+            f"[HINT] Use um seed entre 0 e {MAX_SEED}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     def _parse_win(x: str):
         x = str(x).strip().lower()
         return "full" if x == "full" else int(x)
 
-    if args.windows is not None and len(args.windows) > 0:
-        WINDOW_LIST = [_parse_win(w) for w in args.windows]
-    elif args.window is not None:
-        WINDOW_LIST = [_parse_win(args.window)]
-    else:
-        WINDOW_LIST = [5, 20, 40, "full"]
+    WINDOW_LIST = [_parse_win(w) for w in args.windows]
 
     OUT_CONF = Path("../outputs/conf")
 
@@ -431,9 +440,6 @@ def main():
             fixed_seed=fixed_seed,
             nested=args.nested,
         ):
-            # sbm_rows e w2v_rows já estão filtrados por uma ÚNICA janela
-            # (vêm do yield dentro de word_embedding)
-
             partitions_rows = []
             partitions_rows.extend(sbm_rows)
             partitions_rows.extend(w2v_rows)
@@ -453,7 +459,9 @@ def main():
             # Calcular número de blocos de termos
             n_term_blocks = term_blocks if term_blocks else 0
 
-            # >>> SALVAR PARQUET PARA ESTA JANELA
+            # >>> EXTRAIR WINDOW_SIZE DO DATAFRAME
+            window_size = partitions_df["window"].iloc[0] if len(partitions_df) > 0 else "5"
+
             config_idx, run_idx, partition_file = (
                 results_io.save_partitions_by_config(
                     base_conf_dir=OUT_CONF,
@@ -464,6 +472,7 @@ def main():
                     n_blocks=args.n_blocks,
                     run_idx=r + 1,
                     partitions_df=partitions_df,
+                    window_size=window_size,
                     sbm_entropy=sbm_entropy,
                     vertices_pre_sbm=(
                         dict(vertices_pre_sbm) if vertices_pre_sbm else None
@@ -474,9 +483,6 @@ def main():
                     term_blocks_count=term_blocks,
                     window_blocks_count=window_blocks,
                     w2v_n_clusters=w2v_n_clusters,
-                    w2v_sg=w2v_sg,
-                    w2v_window=w2v_window,
-                    w2v_vector_size=w2v_vector_size,
                 )
             )
 
@@ -487,7 +493,7 @@ def main():
                 else "?"
             )
             print(
-                f"[SAVED] Config {config_idx:04d} | Run {run_idx:04d} | Window {window_val} | {partition_file}"
+                f"[SAVED] Config {config_idx:04d} | Run {run_idx:04d} | Window {window_size} | {partition_file}"
             )
 
 

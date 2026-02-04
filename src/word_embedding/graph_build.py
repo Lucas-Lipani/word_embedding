@@ -3,8 +3,6 @@ from tqdm import tqdm
 from collections import Counter
 from pathlib import Path
 
-from . import graph_build
-
 
 def initialize_graph():
     """
@@ -62,14 +60,14 @@ def build_window_graph(g, df, nlp, w):
         df.iterrows(), desc="Processando Doc-Jan-Termos", total=len(df)
     ):
         doc_id = str(idx)
-        # abstract = row["abstract"]
-        abstract = (
-            "Janela de teste para analisar se está fazendo tudo certo, caso "
-            "esteja tudo certo, irei analisar o próximo."
-        )
+        abstract = row["abstract"]
 
-        print("Abstract")
-        print(abstract)
+        # abstract = (
+        #     "Janela de teste para analisar se está fazendo tudo certo, caso "
+        #     "esteja tudo certo, irei analisar o próximo."
+        # )
+        # print("Abstract")
+        # print(abstract)
 
         # ───── vértice Documento ─────
         v_doc = g.add_vertex()
@@ -304,7 +302,7 @@ def build_window_graph_and_sliding(df, nlp, w, save_visualizations=False):
         for start in range(0, len(tokens) - w_local + 1):
             end = start + w_local
             seq = tuple(tokens[start:end])  # ordem preservada
-            seq_key = seq  # <— CHAVE GLOBAL (sem doc_id!)
+            seq_key = seq 
 
             v_slide = window_vertex_slide.get(seq_key)
             created = False
@@ -462,7 +460,7 @@ def extract_context_window_term_graph(g_jan_term):
     As posições são definidas por tipo:
       tipo 4 → x=-15, tipo 3 → x=0, tipo 1 → x=15
     """
-    g = graph_build.initialize_graph()
+    g = initialize_graph()
 
     cont_y = win_y = term_y = 0
 

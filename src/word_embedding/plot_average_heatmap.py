@@ -1,11 +1,8 @@
 """
-Plota heatmaps de MÉDIAS de métricas agregadas para as 3 comparações:
-- SBM vs W2V
-- SBM vs SBM
-- W2V vs W2V
+Plota heatmaps de MÉDIAS de métricas agregadas.
 
-Carrega dados PRÉ-CALCULADOS de conf/NNNN/analysis/{comparacao}/running_mean.parquet
-NOVA ESTRUTURA: conf/NNNN/analysis/{model_x}_vs_{model_y}/running_mean.parquet
+Carrega dados PRÉ-CALCULADOS de analyses/NNNN/results.parquet
+Arquivo contém comparações entre configurations com colunas de janelas.
 """
 
 import argparse
@@ -18,27 +15,24 @@ import seaborn as sns
 
 def _window_sort_key(w):
     """Ordena janelas de forma que 'full' fique no final."""
-    return float("inf") if w == "full" else int(w)
+    try:
+        return (0, int(w))
+    except (ValueError, TypeError):
+        return (1, str(w))
 
 
-def plot_average_heatmaps(config_dir: Path, model_x: str, model_y: str):
+def plot_average_heatmaps(analysis_dir: Path):
     """
-    Plota heatmaps para MÉDIAS de {model_x} vs {model_y}.
+    Plota heatmaps para todas as métricas do arquivo results.parquet.
 
-    NOVA ESTRUTURA: conf/NNNN/analysis/{model_x}_vs_{model_y}/running_mean.parquet
+    Estrutura: analyses/NNNN/results.parquet
+    Colunas: config_x, config_y, run_x, run_y, window_x, window_y, [métricas...]
 
-    :param config_dir: Caminho da pasta conf/NNNN
-    :param model_x: Modelo X (ex: "sbm", "w2v")
-    :param model_y: Modelo Y (ex: "sbm", "w2v")
+    :param analysis_dir: Caminho da pasta analyses/NNNN
     """
 
-    # Caminho do arquivo de métricas MÉDIAS
-    metrics_file = (
-        config_dir
-        / "analysis"
-        / f"{model_x}_vs_{model_y}"
-        / "running_mean.parquet"
-    )
+    # Caminho do arquivo de resultados
+    metrics_file = analysis_dir / "results.parquet"
 
     if not metrics_file.exists():
         print(f"[WARN] Arquivo não encontrado: {metrics_file}")
@@ -54,35 +48,30 @@ def plot_average_heatmaps(config_dir: Path, model_x: str, model_y: str):
         print(f"[WARN] DataFrame vazio: {metrics_file}", file=sys.stderr)
         return False
 
-    print(f"\n[LOAD] {model_x.upper()} vs {model_y.upper()}: {df.shape}")
+    print(f"\n[LOAD] Análise {analysis_dir.name}: {df.shape}")
 
-    # Identificar colunas de janela conforme a comparação
-    if model_x == model_y:
-        # Comparação homogênea: _row_window e _col_window
-        row_key = f"{model_x}_row_window"
-        col_key = f"{model_y}_col_window"
-    else:
-        # Comparação heterogênea: _window direto
-        row_key = f"{model_x}_window"
-        col_key = f"{model_y}_window"
+    # Identificar colunas de janela e métricas
+    row_key = "window_x"
+    col_key = "window_y"
 
     if row_key not in df.columns or col_key not in df.columns:
         print(
-            f"[WARN] Colunas esperadas não encontradas para {model_x} vs {model_y}",
+            f"[WARN] Colunas esperadas não encontradas",
             file=sys.stderr,
         )
         print(f"[HINT] Encontrado: {df.columns.tolist()}", file=sys.stderr)
         return False
 
-    # Derivar métricas disponíveis
-    metric_cols = [c for c in df.columns if c not in {row_key, col_key}]
+    # Derivar métricas disponíveis (excluir colunas de identificação)
+    exclude_cols = {"config_x", "config_y", "run_x", "run_y", row_key, col_key}
+    metric_cols = [c for c in df.columns if c not in exclude_cols]
 
     if not metric_cols:
         print(f"[WARN] Nenhuma métrica encontrada", file=sys.stderr)
         return False
 
     # Diretório de saída
-    out_dir = config_dir / "analysis" / f"{model_x}_vs_{model_y}"
+    out_dir = analysis_dir / "heatmaps"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"[PLOT] Plotando {len(metric_cols)} métricas...")
@@ -92,7 +81,7 @@ def plot_average_heatmaps(config_dir: Path, model_x: str, model_y: str):
     for metric in metric_cols:
         try:
             # Criar pivot table (MÉDIA JÁ CALCULADA)
-            pivot = df.pivot(index=row_key, columns=col_key, values=metric)
+            pivot = df.pivot_table(index=row_key, columns=col_key, values=metric, aggfunc="mean")
 
             # Ordenar janelas
             rows_sorted = sorted(pivot.index.unique(), key=_window_sort_key)
@@ -111,7 +100,7 @@ def plot_average_heatmaps(config_dir: Path, model_x: str, model_y: str):
                 "npo",
             }:
                 vmin, vmax = 0, 1
-                cmap = "viridis"
+                cmap = "RdYlGn"
             elif metric == "vi":
                 vmin, vmax = None, None
                 cmap = "RdYlGn_r"  # Vermelho (alto) para Verde (baixo)
@@ -121,7 +110,7 @@ def plot_average_heatmaps(config_dir: Path, model_x: str, model_y: str):
 
             # Plotar heatmap
             plt.figure(figsize=(10, 8))
-            sns.heatmap(
+            ax = sns.heatmap(
                 pivot,
                 annot=True,
                 fmt=".3f",
@@ -132,19 +121,21 @@ def plot_average_heatmaps(config_dir: Path, model_x: str, model_y: str):
                 linewidths=0.5,
             )
 
+            ax.invert_yaxis()
+
             plt.title(
-                f"{metric.upper()}: {model_x.upper()} vs {model_y.upper()} (MÉDIA)"
+                f"{metric.upper()}: Análise {analysis_dir.name} (MÉDIA)"
             )
-            plt.xlabel(f"{model_y.upper()} Window")
-            plt.ylabel(f"{model_x.upper()} Window")
+            plt.xlabel("Window Y")
+            plt.ylabel("Window X")
             plt.tight_layout()
 
             # Salvar
-            out_file = out_dir / f"heatmap_{metric}_avg.png"
+            out_file = out_dir / f"heatmap_{metric}.png"
             plt.savefig(out_file, dpi=150, bbox_inches="tight")
             plt.close()
 
-            print(f"✓ Heatmap salvo: {out_file}")
+            print(f"✓ Heatmap salvo: {out_file.name}")
             success_count += 1
 
         except Exception as e:
@@ -157,58 +148,50 @@ def plot_average_heatmaps(config_dir: Path, model_x: str, model_y: str):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Plota heatmaps de MÉDIAS para todas as comparações (NOVA ESTRUTURA)."
+        description="Plota heatmaps de MÉDIAS para análises."
     )
     parser.add_argument(
-        "--config",
-        "-c",
+        "--analysis",
+        "-a",
         type=int,
-        required=True,
-        help="Número da CONFIG (ex: 1 para conf/0001)",
+        help="Número da análise (ex: 1 para 0001). Se não fornecido, processa todas."
     )
     args = parser.parse_args()
 
-    # >>> NOVA ESTRUTURA: conf/NNNN
-    base = Path("../outputs/conf")
+    # >>> Estrutura: analyses/NNNN
+    base = Path("../outputs/analyses")
 
     if not base.exists():
         print(
             f"[ERROR] Diretório base não encontrado: {base}", file=sys.stderr
         )
         print(
-            f"[HINT] Execute primeiro: python3 -m word_embedding.window_experiments",
+            f"[HINT] Execute primeiro: python3 -m word_embedding.compute_analysis",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    config_dir = base / f"{args.config:04d}"
+    # Selecionar análise(s)
+    if args.analysis:
+        analysis_dir = base / f"{args.analysis:04d}"
+        if not analysis_dir.exists():
+            print(f"[ERROR] Análise não encontrada: {analysis_dir}", file=sys.stderr)
+            available = sorted([d.name for d in base.glob("????")])
+            if available:
+                print(f"[HINT] Análises disponíveis: {', '.join(available)}", file=sys.stderr)
+            sys.exit(1)
+        analysis_dirs = [analysis_dir]
+    else:
+        analysis_dirs = sorted([d for d in base.glob("????")])
 
-    if not config_dir.exists():
-        print(f"[ERROR] Config não encontrada: {config_dir}", file=sys.stderr)
-        available = sorted([d.name for d in base.glob("????")])
-        if available:
-            print(
-                f"[HINT] Configs disponíveis: {', '.join(available)}",
-                file=sys.stderr,
-            )
+    if not analysis_dirs:
+        print(f"[ERROR] Nenhuma análise encontrada em: {base}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"\n{'='*70}")
-    print(f"Plotando heatmaps de MÉDIA para todas as comparações")
-    print(f"Config: {config_dir.name}")
-    print(f"{'='*70}")
-
-    # >>> As 3 comparações
-    comparisons = [
-        ("sbm", "w2v"),
-        ("sbm", "sbm"),
-        ("w2v", "w2v"),
-    ]
-
     all_success = True
-    for model_x, model_y in comparisons:
-        print(f"\n### {model_x.upper()} vs {model_y.upper()}")
-        success = plot_average_heatmaps(config_dir, model_x, model_y)
+    for analysis_dir in analysis_dirs:
+        print(f"\n[ANÁLISE] {analysis_dir.name}")
+        success = plot_average_heatmaps(analysis_dir)
         if not success:
             all_success = False
 

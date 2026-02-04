@@ -14,48 +14,61 @@ def save_partitions_by_config(
     n_blocks: int | None,
     run_idx: int,
     partitions_df: pd.DataFrame,
+    window_size: int | str,
     sbm_entropy: float | None = None,
-    # >>> Informações detalhadas do grafo e SBM
     vertices_pre_sbm: Dict[int, int] = None,
     blocks_post_sbm: Dict[int, int] = None,
     term_blocks_count: int = None,
     window_blocks_count: int = None,
-    # >>> Informações do W2V
     w2v_n_clusters: int = None,
-    w2v_sg: int = None,
-    w2v_window: int = None,
-    w2v_vector_size: int = None,
 ):
     """
     Salva partições na nova estrutura: conf/NNNN/run/RRRR/partition.parquet
-    Com informações detalhadas sobre estrutura do grafo, blocos do SBM e W2V.
+    Com config.json (ENTRADA) e results.json (SAÍDA) separados por modelo.
+    
+    >>> IMPORTANTE: Salva APENAS dados do modelo específico em cada config <<<
     """
     cfg_mgr = config_manager.ConfigManager(base_conf_dir)
 
-    # Encontrar ou criar config_dir
-    config_dir, config_idx, was_reused = cfg_mgr.find_or_create_config_dir(
+    # Encontrar ou criar 2 configs (SBM + W2V) com mesma assinatura de corpus+window
+    config_dir_sbm, config_dir_w2v, config_idx = cfg_mgr.find_or_create_config_dirs(
         n_samples=n_samples,
         seed=seed,
         graph_type=graph_type,
         nested=nested,
         n_blocks=n_blocks,
+        window_size=window_size,
     )
 
-    # Salvar config.json
+    # Salvar config.json para SBM
     cfg_mgr.save_config(
-        config_dir=config_dir,
+        config_dir=config_dir_sbm,
+        model_kind="sbm",
         n_samples=n_samples,
         seed=seed,
         graph_type=graph_type,
         nested=nested,
         n_blocks=n_blocks,
+        window_size=window_size,
     )
 
-    # Calcular o próximo run_idx disponível
-    run_dir_base = config_dir / "run"
-    run_dir_base.mkdir(parents=True, exist_ok=True)
+    # Salvar config.json para W2V
+    cfg_mgr.save_config(
+        config_dir=config_dir_w2v,
+        model_kind="w2v",
+        n_samples=n_samples,
+        seed=seed,
+        graph_type=graph_type,
+        nested=nested,
+        n_blocks=n_blocks,
+        window_size=window_size,
+    )
 
-    existing_runs = sorted(run_dir_base.glob("????"))
+    # Calcular o próximo run_idx disponível (usa SBM como referência)
+    run_dir_base_sbm = config_dir_sbm / "run"
+    run_dir_base_sbm.mkdir(parents=True, exist_ok=True)
+
+    existing_runs = sorted(run_dir_base_sbm.glob("????"))
     next_run_idx = (
         max([int(d.name) for d in existing_runs], default=0) + 1
         if existing_runs
@@ -64,46 +77,49 @@ def save_partitions_by_config(
 
     print(f"[RUN_IDX] Próximo run_idx disponível: {next_run_idx:04d}")
 
-    run_dir = run_dir_base / f"{next_run_idx:04d}"
-    run_dir.mkdir(parents=True, exist_ok=True)
+    # Criar diretórios de run para ambas configs
+    run_dir_sbm = run_dir_base_sbm / f"{next_run_idx:04d}"
+    run_dir_sbm.mkdir(parents=True, exist_ok=True)
 
-    # Salvar partition.parquet
-    partition_file = run_dir / "partition.parquet"
-    partitions_df.to_parquet(partition_file, engine="pyarrow")
+    run_dir_w2v = config_dir_w2v / "run" / f"{next_run_idx:04d}"
+    run_dir_w2v.mkdir(parents=True, exist_ok=True)
 
-    # Salvar parameters.json COM TODAS AS INFORMAÇÕES (SBM + W2V)
-    cfg_mgr.save_run_parameters(
-        config_dir=config_dir,
+    # >>> CORRIGIDO: Salvar APENAS dados do modelo específico em cada config
+    partitions_sbm = partitions_df[partitions_df["model"] == "sbm"].copy()
+    partitions_w2v = partitions_df[partitions_df["model"] == "w2v"].copy()
+    
+    partition_file_sbm = run_dir_sbm / "partition.parquet"
+    partition_file_w2v = run_dir_w2v / "partition.parquet"
+    
+    if not partitions_sbm.empty:
+        partitions_sbm.to_parquet(partition_file_sbm, engine="pyarrow")
+        print(f"[SAVED] Partição SBM: {partition_file_sbm} ({len(partitions_sbm)} rows)")
+    else:
+        print(f"[WARN] Nenhum dado SBM para salvar em {partition_file_sbm}")
+    
+    if not partitions_w2v.empty:
+        partitions_w2v.to_parquet(partition_file_w2v, engine="pyarrow")
+        print(f"[SAVED] Partição W2V: {partition_file_w2v} ({len(partitions_w2v)} rows)")
+    else:
+        print(f"[WARN] Nenhum dado W2V para salvar em {partition_file_w2v}")
+
+    # Salvar results.json para SBM
+    cfg_mgr.save_run_results(
+        config_dir=config_dir_sbm,
         run_idx=next_run_idx,
+        model_kind="sbm",
         sbm_entropy=sbm_entropy,
         vertices_pre_sbm=vertices_pre_sbm,
-        blocks_post_sbm=blocks_post_sbm,
-        term_blocks_count=term_blocks_count,
-        window_blocks_count=window_blocks_count,
+        partitions_per_type=blocks_post_sbm,
+    )
+
+    # Salvar results.json para W2V
+    cfg_mgr.save_run_results(
+        config_dir=config_dir_w2v,
+        run_idx=next_run_idx,
+        model_kind="w2v",
         w2v_n_clusters=w2v_n_clusters,
-        w2v_sg=w2v_sg,
-        w2v_window=w2v_window,
-        w2v_vector_size=w2v_vector_size,
+        clusters_per_type={1: w2v_n_clusters} if w2v_n_clusters else None,
     )
 
-    print(f"[SAVED] Partição salva: {partition_file}")
-
-    return config_idx, next_run_idx, partition_file
-
-
-def load_partitions(config_dir: Path, run_idx: int) -> pd.DataFrame:
-    """
-    Carrega partições de conf/NNNN/run/RRRR/partition.parquet
-
-    :param config_dir: Pasta config/NNNN
-    :param run_idx: Índice da execução
-    :return: DataFrame com partições
-    """
-    partition_file = (
-        config_dir / "run" / f"{run_idx:04d}" / "partition.parquet"
-    )
-
-    if not partition_file.exists():
-        raise FileNotFoundError(f"Partição não encontrada: {partition_file}")
-
-    return pd.read_parquet(partition_file, engine="pyarrow")
+    return config_idx, next_run_idx, partition_file_sbm
