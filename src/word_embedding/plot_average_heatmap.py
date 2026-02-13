@@ -11,6 +11,7 @@ from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import colorcet as cc
 
 
 def _window_sort_key(w):
@@ -63,7 +64,16 @@ def plot_average_heatmaps(analysis_dir: Path):
         return False
 
     # Derivar métricas disponíveis (excluir colunas de identificação)
-    exclude_cols = {"config_x", "config_y", "run_x", "run_y", row_key, col_key}
+    exclude_cols = {
+        "config_x",
+        "config_y",
+        "run_x",
+        "run_y",
+        row_key,
+        col_key,
+        "model_x",
+        "model_y",
+    }
     metric_cols = [c for c in df.columns if c not in exclude_cols]
 
     if not metric_cols:
@@ -81,7 +91,9 @@ def plot_average_heatmaps(analysis_dir: Path):
     for metric in metric_cols:
         try:
             # Criar pivot table (MÉDIA JÁ CALCULADA)
-            pivot = df.pivot_table(index=row_key, columns=col_key, values=metric, aggfunc="mean")
+            pivot = df.pivot_table(
+                index=row_key, columns=col_key, values=metric, aggfunc="mean"
+            )
 
             # Ordenar janelas
             rows_sorted = sorted(pivot.index.unique(), key=_window_sort_key)
@@ -100,7 +112,7 @@ def plot_average_heatmaps(analysis_dir: Path):
                 "npo",
             }:
                 vmin, vmax = 0, 1
-                cmap = "RdYlGn"
+                cmap = getattr(cc.cm, "bgy")
             elif metric == "vi":
                 vmin, vmax = None, None
                 cmap = "RdYlGn_r"  # Vermelho (alto) para Verde (baixo)
@@ -123,9 +135,7 @@ def plot_average_heatmaps(analysis_dir: Path):
 
             ax.invert_yaxis()
 
-            plt.title(
-                f"{metric.upper()}: Análise {analysis_dir.name} (MÉDIA)"
-            )
+            plt.title(f"{metric.upper()}: Análise {analysis_dir.name} (MÉDIA)")
             plt.xlabel("Window Y")
             plt.ylabel("Window X")
             plt.tight_layout()
@@ -154,7 +164,7 @@ def main():
         "--analysis",
         "-a",
         type=int,
-        help="Número da análise (ex: 1 para 0001). Se não fornecido, processa todas."
+        help="Número da análise (ex: 1 para 0001). Se não fornecido, processa todas.",
     )
     args = parser.parse_args()
 
@@ -175,17 +185,25 @@ def main():
     if args.analysis:
         analysis_dir = base / f"{args.analysis:04d}"
         if not analysis_dir.exists():
-            print(f"[ERROR] Análise não encontrada: {analysis_dir}", file=sys.stderr)
+            print(
+                f"[ERROR] Análise não encontrada: {analysis_dir}",
+                file=sys.stderr,
+            )
             available = sorted([d.name for d in base.glob("????")])
             if available:
-                print(f"[HINT] Análises disponíveis: {', '.join(available)}", file=sys.stderr)
+                print(
+                    f"[HINT] Análises disponíveis: {', '.join(available)}",
+                    file=sys.stderr,
+                )
             sys.exit(1)
         analysis_dirs = [analysis_dir]
     else:
         analysis_dirs = sorted([d for d in base.glob("????")])
 
     if not analysis_dirs:
-        print(f"[ERROR] Nenhuma análise encontrada em: {base}", file=sys.stderr)
+        print(
+            f"[ERROR] Nenhuma análise encontrada em: {base}", file=sys.stderr
+        )
         sys.exit(1)
 
     all_success = True

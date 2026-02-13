@@ -94,7 +94,7 @@ def build_window_graph(g, df, nlp, w):
         # ───── janelas centradas em cada token ─────
         for i, term_central in enumerate(toks):
             start, end = max(0, i - w_local), min(len(toks), i + w_local + 1)
-            win_tokens = toks[start:i] + toks[i + 1 : end]  # contexto
+            win_tokens = toks[start:i] + toks[i + 1: end]  # contexto
             win_key = (frozenset(win_tokens), term_central)  # deduplicação
 
             # --- vértice Janela ---
@@ -302,7 +302,7 @@ def build_window_graph_and_sliding(df, nlp, w, save_visualizations=False):
         for start in range(0, len(tokens) - w_local + 1):
             end = start + w_local
             seq = tuple(tokens[start:end])  # ordem preservada
-            seq_key = seq 
+            seq_key = seq
 
             v_slide = window_vertex_slide.get(seq_key)
             created = False

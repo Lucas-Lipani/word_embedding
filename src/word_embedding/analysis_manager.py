@@ -7,7 +7,7 @@ from typing import List
 class AnalysisManager:
     """
     Gerencia a estrutura: analyses/NNNN/config.json + results.json
-    
+
     config.json: ENTRADA - quais configs foram comparadas
     results.json: SAÍDA - métricas aggregadas da análise
     """
@@ -23,16 +23,16 @@ class AnalysisManager:
     ) -> tuple[Path, int]:
         """
         Encontra/cria pasta analyses/NNNN para uma análise específica.
-        
+
         Assinatura: sorted(config_indices) + comparison_type
-        
+
         :param config_indices: Lista de índices de configs a comparar (ex: [1, 2])
         :param comparison_type: Tipo de comparação
         :return: (analysis_dir, analysis_idx)
         """
         # >>> CORRIGIDO: converter para int (remove numpy.int64)
         config_indices_sorted = sorted([int(idx) for idx in config_indices])
-        
+
         analysis_sig = json.dumps(
             {
                 "configs": config_indices_sorted,
@@ -44,7 +44,7 @@ class AnalysisManager:
         print(f"[DEBUG] Analysis signature: {analysis_sig}")
 
         analysis_dirs = sorted(self.base_analyses_dir.glob("????"))
-        
+
         # Procurar análises existentes com mesma assinatura
         for analysis_dir in analysis_dirs:
             config_file = analysis_dir / "config.json"
@@ -81,9 +81,7 @@ class AnalysisManager:
         analysis_dir = self.base_analyses_dir / f"{next_idx:04d}"
         analysis_dir.mkdir(parents=True, exist_ok=True)
 
-        print(
-            f"[ANALYSIS] ✗ Criando nova análise: {analysis_dir.name}"
-        )
+        print(f"[ANALYSIS] ✗ Criando nova análise: {analysis_dir.name}")
 
         return analysis_dir, next_idx
 
@@ -145,7 +143,14 @@ class AnalysisManager:
         # Calcular estatísticas agregadas
         metrics = {}
         for col in results_df.columns:
-            if col not in {"config_x", "config_y", "run_x", "run_y", "window_x", "window_y"}:
+            if col not in {
+                "config_x",
+                "config_y",
+                "run_x",
+                "run_y",
+                "window_x",
+                "window_y",
+            }:
                 metrics[col] = {
                     "mean": float(results_df[col].mean()),
                     "std": float(results_df[col].std()),

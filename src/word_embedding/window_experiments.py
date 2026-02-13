@@ -327,18 +327,10 @@ def word_embedding(
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--runs",
-        "--run",
-        "--r",
-        type=int,
-        default=1,
-        help="Nº de repetições"
+        "--runs", "--run", "--r", type=int, default=1, help="Nº de repetições"
     )
     parser.add_argument(
-        "--samples",
-        type=int,
-        default=10,
-        help="Nº de documentos amostrados"
+        "--samples", type=int, default=10, help="Nº de documentos amostrados"
     )
     parser.add_argument(
         "--seed",
@@ -460,7 +452,11 @@ def main():
             n_term_blocks = term_blocks if term_blocks else 0
 
             # >>> EXTRAIR WINDOW_SIZE DO DATAFRAME
-            window_size = partitions_df["window"].iloc[0] if len(partitions_df) > 0 else "5"
+            window_size = (
+                partitions_df["window"].iloc[0]
+                if len(partitions_df) > 0
+                else "5"
+            )
 
             config_idx, run_idx, partition_file = (
                 results_io.save_partitions_by_config(
