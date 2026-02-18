@@ -6,6 +6,7 @@ Arquivo contém comparações entre configurations com colunas de janelas.
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 import pandas as pd
@@ -32,6 +33,29 @@ def plot_average_heatmaps(analysis_dir: Path):
     :param analysis_dir: Caminho da pasta analyses/NNNN
     """
 
+    # Carregar config.json para obter metadados
+    config_file = analysis_dir / "config.json"
+    config_data = {}
+    model_label = "Unknown"
+    title_suffix = ""
+    
+    if config_file.exists():
+        try:
+            with open(config_file, 'r') as f:
+                config_data = json.load(f)
+            
+            # Extrair tipo de comparação (modelo)
+            comparison_type = config_data.get("comparison_type", "unknown")
+            model_label = comparison_type.replace("_", " ").title()
+            
+            # Extrair seed e número de samples para o título
+            corpus = config_data.get("corpus", {})
+            seed = corpus.get("seed", "unknown")
+            num_samples = corpus.get("number_of_documents", "unknown")
+            title_suffix = f"Seed: {seed} | Samples: {num_samples}"
+        except Exception as e:
+            print(f"[WARN] Erro ao carregar config.json: {e}", file=sys.stderr)
+
     # Caminho do arquivo de resultados
     metrics_file = analysis_dir / "results.parquet"
 
@@ -54,6 +78,25 @@ def plot_average_heatmaps(analysis_dir: Path):
     # Identificar colunas de janela e métricas
     row_key = "window_x"
     col_key = "window_y"
+
+    # Extrair modelos dos eixos (se disponíveis)
+    model_x_label = "Window X"
+    model_y_label = "Window Y"
+    if "model_x" in df.columns and "model_y" in df.columns:
+        model_x = df["model_x"].iloc[0] if len(df) > 0 else "unknown"
+        model_y = df["model_y"].iloc[0] if len(df) > 0 else "unknown"
+        
+        # Normalizar nomes de modelos
+        def normalize_model_name(model):
+            if model == "w2v+kmeans":
+                return "W2V"
+            else:
+                return model.upper()
+        
+        model_x_norm = normalize_model_name(model_x)
+        model_y_norm = normalize_model_name(model_y)
+        model_x_label = f"Window {model_x_norm}"
+        model_y_label = f"Window {model_y_norm}"
 
     if row_key not in df.columns or col_key not in df.columns:
         print(
@@ -135,9 +178,9 @@ def plot_average_heatmaps(analysis_dir: Path):
 
             ax.invert_yaxis()
 
-            plt.title(f"{metric.upper()}: Análise {analysis_dir.name} (MÉDIA)")
-            plt.xlabel("Window Y")
-            plt.ylabel("Window X")
+            plt.title(f"{metric.upper()}: {title_suffix}")
+            plt.xlabel(model_y_label)
+            plt.ylabel(model_x_label)
             plt.tight_layout()
 
             # Salvar
@@ -164,7 +207,8 @@ def main():
         "--analysis",
         "-a",
         type=int,
-        help="Número da análise (ex: 1 para 0001). Se não fornecido, processa todas.",
+        nargs="*",
+        help="Números das análises (ex: 1 3 5 para 0001, 0003, 0005). Se não fornecido, processa todas.",
     )
     args = parser.parse_args()
 
@@ -183,12 +227,19 @@ def main():
 
     # Selecionar análise(s)
     if args.analysis:
-        analysis_dir = base / f"{args.analysis:04d}"
-        if not analysis_dir.exists():
-            print(
-                f"[ERROR] Análise não encontrada: {analysis_dir}",
-                file=sys.stderr,
-            )
+        # Se foram passados números de análises
+        analysis_dirs = []
+        for analysis_num in args.analysis:
+            analysis_dir = base / f"{analysis_num:04d}"
+            if not analysis_dir.exists():
+                print(
+                    f"[ERROR] Análise não encontrada: {analysis_dir}",
+                    file=sys.stderr,
+                )
+            else:
+                analysis_dirs.append(analysis_dir)
+        
+        if not analysis_dirs:
             available = sorted([d.name for d in base.glob("????")])
             if available:
                 print(
@@ -196,8 +247,8 @@ def main():
                     file=sys.stderr,
                 )
             sys.exit(1)
-        analysis_dirs = [analysis_dir]
     else:
+        # Se nenhum número foi passado, processa todas
         analysis_dirs = sorted([d for d in base.glob("????")])
 
     if not analysis_dirs:
