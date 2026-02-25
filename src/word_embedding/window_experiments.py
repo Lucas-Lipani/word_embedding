@@ -399,7 +399,7 @@ def main():
 
     # Carrega spaCy e dados
     nlp = spacy.load("en_core_web_sm")
-    df_full = pd.read_parquet("../wos_sts_journals.parquet")
+    df_full = pd.read_parquet("../data_lucas_argentina169.zstd")
     df_docs = df_full.sample(n=n_samples, random_state=fixed_seed)
     df_docs = tokenize_abstracts(df_docs, nlp)
 
