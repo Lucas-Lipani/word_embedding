@@ -400,6 +400,11 @@ def main():
     # Carrega spaCy e dados
     nlp = spacy.load("en_core_web_sm")
     df_full = pd.read_parquet("../data_lucas_argentina169.zstd")
+
+    # Keep only rows with usable abstracts
+    df_full = df_full[df_full["abstract"].notna()].copy()
+    df_full["abstract"] = df_full["abstract"].astype(str)
+
     df_docs = df_full.sample(n=n_samples, random_state=fixed_seed)
     df_docs = tokenize_abstracts(df_docs, nlp)
 
