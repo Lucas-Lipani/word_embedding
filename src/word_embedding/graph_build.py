@@ -205,7 +205,14 @@ def build_window_graph_and_sliding(df, nlp, w, save_visualizations=False):
         tokens = row["tokens"]
 
         # Tamanho local da janela
-        w_local = len(tokens) if w == "full" else int(w)
+        # Se w > número de tokens, usar size completo automaticamente
+        if w == "full":
+            w_local = len(tokens)
+        else:
+            w_requested = int(w)
+            w_local = min(w_requested, len(tokens))
+            if w_local < w_requested:
+                print(f"  ⚠ Doc {doc_id}: janela {w_requested} > {len(tokens)} tokens → usando full")
 
         # ───── Documento no g_full ─────
         v_doc = g_full.add_vertex()
@@ -284,7 +291,12 @@ def build_window_graph_and_sliding(df, nlp, w, save_visualizations=False):
                     g_full.ep["weight"][e1] += 1
 
         # --------- g_slide: janelas deslizantes por SEQUÊNCIA (ordem preservada), fundidas GLOBALMENTE ---------
-        w_local = len(tokens) if w == "full" else int(w)
+        # Se w > número de tokens, usar size completo automaticamente
+        if w == "full":
+            w_local = len(tokens)
+        else:
+            w_requested = int(w)
+            w_local = min(w_requested, len(tokens))
 
         # garanta as props (faça isso uma única vez; aqui já funciona porque é antes de criar os vértices da janela)
         if "occurs_total" not in g_slide.vp:
@@ -359,9 +371,13 @@ def build_window_graph_and_sliding(df, nlp, w, save_visualizations=False):
 
     if save_visualizations:
         save_graph_visualization(g_full, f"01_Document-Window-Term_window{w}")
-        save_graph_visualization(
-            g_slide, f"02_Document-SlideWindow-Term_window{w}"
-        )
+        # Só salvar g_slide se tem vértices (evita erro ao desenhar grafo vazio)
+        if g_slide.num_vertices() > 0:
+            save_graph_visualization(
+                g_slide, f"02_Document-SlideWindow-Term_window{w}"
+            )
+        else:
+            print(f"  [SKIP] Grafo g_slide vazio para window={w}")
 
     return g_full, g_slide
 

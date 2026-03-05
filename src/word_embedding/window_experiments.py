@@ -324,7 +324,13 @@ def word_embedding(
         yield sbm_rows, w2v_rows, sbm_entropy, k_blocks, vertices_pre_sbm, blocks_post_sbm, term_blocks, window_blocks, k_blocks, w2v_sg, w2v_window, w2v_vector_size
 
 
-def main():
+def parse_and_validate_arguments():
+    """
+    Parse e valida os argumentos da linha de comando.
+    
+    Retorna:
+        tuple: (n_runs, n_samples, fixed_seed, WINDOW_LIST, graph_type, n_blocks, nested, OUT_CONF)
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--runs", "--run", "--r", type=int, default=1, help="Nº de repetições"
@@ -376,7 +382,7 @@ def main():
         args.seed if args.seed is not None else int(time.time()) % 2**32
     )
 
-    # >>> VALIDAÇÃO: seed deve estar entre 0 e 2^32-1
+    # Validação: seed deve estar entre 0 e 2^32-1
     MAX_SEED = 2**32 - 1
     if fixed_seed < 0 or fixed_seed > MAX_SEED:
         print(
@@ -394,25 +400,67 @@ def main():
         return "full" if x == "full" else int(x)
 
     WINDOW_LIST = [_parse_win(w) for w in args.windows]
-
     OUT_CONF = Path("../outputs/conf")
 
-    # Carrega spaCy e dados
+    return n_runs, n_samples, fixed_seed, WINDOW_LIST, args.graph_type, args.n_blocks, args.nested, OUT_CONF
+
+
+def prepare_dataframe(n_samples, fixed_seed):
+    """
+    Carrega, filtra e tokeniza o dataframe.
+    Se n_samples > total de documentos, limita ao máximo.
+    
+    Args:
+        n_samples (int): Número de documentos para amostrar
+        fixed_seed (int): Seed para reprodutibilidade
+        
+    Returns:
+        tuple: (df_docs, nlp, n_samples_real) - DataFrame processado, modelo spaCy e n_samples ajustado
+    """
     nlp = spacy.load("en_core_web_sm")
     df_full = pd.read_parquet("../data_lucas_argentina169.zstd")
 
-    # Keep only rows with usable abstracts
+    # Manter apenas linhas com abstracts válidos
     df_full = df_full[df_full["abstract"].notna()].copy()
     df_full["abstract"] = df_full["abstract"].astype(str)
 
-    df_docs = df_full.sample(n=n_samples, random_state=fixed_seed)
+    # Ajustar n_samples se necessário
+    total_docs = len(df_full)
+    n_samples_real = min(n_samples, total_docs)
+    
+    if n_samples_real < n_samples:
+        print(f"\n⚠ N. de amostras solicitadas ({n_samples}) > documentos disponíveis ({total_docs})")
+        print(f"→ Limitando a {n_samples_real} documentos")
+    
+    df_docs = df_full.sample(n=n_samples_real, random_state=fixed_seed)
     df_docs = tokenize_abstracts(df_docs, nlp)
+    
+    return df_docs, nlp, n_samples_real
+
+
+def main():
+    # Parse argumentos
+    n_runs, n_samples, fixed_seed, WINDOW_LIST, graph_type, n_blocks, nested, OUT_CONF = (
+        parse_and_validate_arguments()
+    )
+
+    # Prepara dataframe (retorna n_samples ajustado se necessário)
+    df_docs, nlp, n_samples = prepare_dataframe(n_samples, fixed_seed)
+
+    # print("Tokens de exemplo:")
+    # #imprimir número de tokens por documento na ordem crescente de tokens, junto com o UID do documento
+    # df_docs_sorted = df_docs.sort_values(by='tokens', key=lambda x: x.str.len())
+    # for i in range(len(df_docs_sorted)):
+    #     print(f"Doc {i+1} (UID: {df_docs_sorted.iloc[i]['uid']}): Número de Tokens:{len(df_docs_sorted.iloc[i]['tokens'])}")
+        
+    
+    # exit()
 
     for r in range(n_runs):
         print(f"\n=== Execução {r+1}/{n_runs} ===")
         print(f"Seed usada (fixa): {fixed_seed}")
         print(f"Janelas: {WINDOW_LIST}")
-        print(f"Tipo de Grafo: {args.graph_type}")
+        print(f"Tipo de Grafo: {graph_type}")
 
         # >>> MODIFICADO: processar cada janela SEPARADAMENTE
         for (
@@ -432,10 +480,10 @@ def main():
             df_docs,
             nlp,
             WINDOW_LIST,
-            graph_type=args.graph_type,
-            n_blocks=args.n_blocks,
+            graph_type=graph_type,
+            n_blocks=n_blocks,
             fixed_seed=fixed_seed,
-            nested=args.nested,
+            nested=nested,
         ):
             partitions_rows = []
             partitions_rows.extend(sbm_rows)
@@ -468,9 +516,9 @@ def main():
                     base_conf_dir=OUT_CONF,
                     n_samples=n_samples,
                     seed=fixed_seed,
-                    graph_type=args.graph_type,
-                    nested=args.nested,
-                    n_blocks=args.n_blocks,
+                    graph_type=graph_type,
+                    nested=nested,
+                    n_blocks=n_blocks,
                     run_idx=r + 1,
                     partitions_df=partitions_df,
                     window_size=window_size,

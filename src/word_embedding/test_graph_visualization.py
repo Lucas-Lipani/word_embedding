@@ -211,7 +211,7 @@ def main():
     print(f"  Tokens por doc: {[len(t) for t in df['tokens']]}")
 
     # Testar todos os tipos com múltiplas janelas
-    windows = [3]
+    windows = [3, 5, 20,"full"]
     results = {}
 
     results["Document-SlideWindow-Term"] = test_document_slidewindow_term(
