@@ -432,6 +432,8 @@ def prepare_dataframe(n_samples, fixed_seed):
     if n_samples_real < n_samples:
         print(f"\n⚠ N. de amostras solicitadas ({n_samples}) > documentos disponíveis ({total_docs})")
         print(f"→ Limitando a {n_samples_real} documentos")
+    else:
+        print(f"\nN. de amostras: {n_samples_real}")
     
     df_docs = df_full.sample(n=n_samples_real, random_state=fixed_seed)
     
