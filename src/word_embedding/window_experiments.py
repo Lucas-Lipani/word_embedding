@@ -403,6 +403,10 @@ def prepare_dataframe(n_samples, fixed_seed):
     Returns:
         tuple: (df_docs, nlp, n_samples_real) - DataFrame processado, modelo spaCy e n_samples ajustado
     """
+    # >>> FILTRO DE TOKENS (comentar para desabilitar)
+    MIN_TOKENS = 100
+    # MIN_TOKENS = None  # ← Descomente para desabilitar o filtro
+    
     nlp = spacy.load("en_core_web_sm")
     df_full = pd.read_parquet("../data_lucas_argentina169.zstd")
 
@@ -410,6 +414,17 @@ def prepare_dataframe(n_samples, fixed_seed):
     df_full = df_full[df_full["abstract"].notna()].copy()
     df_full["abstract"] = df_full["abstract"].astype(str)
 
+    # Tokenizar ANTES do filtro de mínimo de tokens
+    print(f"[LOAD] Total de documentos: {len(df_full)}")
+    df_full = tokenize_abstracts(df_full, nlp)
+    
+    # >>> FILTRO: Manter apenas docs com MIN_TOKENS tokens ou mais
+    if MIN_TOKENS is not None:
+        df_filtered = df_full[df_full["tokens"].apply(len) >= MIN_TOKENS].copy()
+        docs_filtered_out = len(df_full) - len(df_filtered)
+        print(f"⏺ Filtro: {len(df_full)} → {len(df_filtered)} docs (removidos: {docs_filtered_out} com < {MIN_TOKENS} tokens)")
+        df_full = df_filtered
+    
     # Ajustar n_samples se necessário
     total_docs = len(df_full)
     n_samples_real = min(n_samples, total_docs)
@@ -419,7 +434,6 @@ def prepare_dataframe(n_samples, fixed_seed):
         print(f"→ Limitando a {n_samples_real} documentos")
     
     df_docs = df_full.sample(n=n_samples_real, random_state=fixed_seed)
-    df_docs = tokenize_abstracts(df_docs, nlp)
     
     return df_docs, nlp, n_samples_real
 
