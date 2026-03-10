@@ -77,8 +77,6 @@ def save_partitions_by_config(
         else 1
     )
 
-    print(f"[RUN_IDX] Próximo run_idx disponível: {next_run_idx:04d}")
-
     # Criar diretórios de run para ambas configs
     run_dir_sbm = run_dir_base_sbm / f"{next_run_idx:04d}"
     run_dir_sbm.mkdir(parents=True, exist_ok=True)
@@ -95,17 +93,11 @@ def save_partitions_by_config(
 
     if not partitions_sbm.empty:
         partitions_sbm.to_parquet(partition_file_sbm, engine="pyarrow")
-        print(
-            f"[SAVED] Partição SBM: {partition_file_sbm} ({len(partitions_sbm)} rows)"
-        )
     else:
         print(f"[WARN] Nenhum dado SBM para salvar em {partition_file_sbm}")
 
     if not partitions_w2v.empty:
         partitions_w2v.to_parquet(partition_file_w2v, engine="pyarrow")
-        print(
-            f"[SAVED] Partição W2V: {partition_file_w2v} ({len(partitions_w2v)} rows)"
-        )
     else:
         print(f"[WARN] Nenhum dado W2V para salvar em {partition_file_w2v}")
 

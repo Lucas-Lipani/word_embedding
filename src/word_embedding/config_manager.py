@@ -75,13 +75,6 @@ class ConfigManager:
             n_samples, seed, graph_type, nested, n_blocks, window_size
         )
 
-        print(f"[DEBUG] Corpus signature:")
-        print(f"        seed={seed}, samples={n_samples}, graph={graph_type}")
-        print(
-            f"        nested={nested}, n_blocks={n_blocks}, window={window_size}"
-        )
-        print(f"        hash: {corpus_sig}")
-
         config_dirs = sorted(self.base_conf_dir.glob("????"))
         corpus_configs = {}  # Mapeia assinatura → {model_kind: config_dir}
 
@@ -123,24 +116,7 @@ class ConfigManager:
                     if corpus_sig not in corpus_configs:
                         corpus_configs[corpus_sig] = {}
                     corpus_configs[corpus_sig][model_kind] = config_dir
-                    print(
-                        f"[DEBUG] ✓ Encontrada config existente: {config_dir.name} ({model_kind})"
-                    )
-                else:
-                    saved_seed = corpus.get("seed")
-                    saved_samples = corpus.get("number_of_documents")
-                    saved_graph = graph.get("graph_type")
-                    saved_nested = graph.get("sbm_variant")
-                    saved_window = graph.get("window_size")
-                    print(
-                        f"[DEBUG] ✗ Config {config_dir.name} tem assinatura diferente"
-                    )
-                    print(
-                        f"        seed={saved_seed}, samples={saved_samples}, graph={saved_graph}"
-                    )
-                    print(
-                        f"        nested={saved_nested}, window={saved_window}"
-                    )
+
             except Exception as e:
                 print(f"[WARN] Erro ao ler {config_file}: {e}")
 
@@ -151,14 +127,7 @@ class ConfigManager:
 
             # SÓ reutiliza se AMBAS existem
             if config_sbm and config_w2v:
-                print(
-                    f"[CONFIG] ✓ Reutilizando configs existentes: SBM={config_sbm.name}, W2V={config_w2v.name}"
-                )
                 return config_sbm, config_w2v, int(config_sbm.name)
-            else:
-                print(
-                    f"[DEBUG] Configs parciais encontradas: SBM={config_sbm}, W2V={config_w2v} (ambas necessárias)"
-                )
 
         # Senão, cria novos índices
         next_idx = max([int(d.name) for d in config_dirs], default=0) + 1
@@ -192,9 +161,6 @@ class ConfigManager:
         config_file = config_dir / "config.json"
 
         if config_file.exists():
-            print(
-                f"[CONFIG] config.json já existe em {config_dir.name}, preservando..."
-            )
             return config_file
 
         if model_kind == "sbm":

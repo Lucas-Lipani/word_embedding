@@ -16,7 +16,7 @@ def create_mini_corpus():
     return pd.DataFrame(
         {
             "abstract": [
-                "Machine learning enables systems to make autonomous decisions.",
+                "Machine learning allows machine learning systems to learn from data, identify patterns in data, and make autonomous decisions based on learned patterns.",
                 # "Deep learning uses neural networks to process information.",
                 # "Natural language processing helps computers understand text.",
             ]

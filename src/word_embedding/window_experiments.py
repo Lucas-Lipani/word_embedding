@@ -62,17 +62,6 @@ def count_connected_term_blocks(state, g):
         if b in connected:
             blocks_by_type[t].add(b)
 
-    print("\n[Depuração] Blocos conectados por tipo:")
-    for t, bls in sorted(blocks_by_type.items()):
-        nome = {
-            0: "Documento",
-            1: "Termo",
-            3: "Janela",
-            4: "Contexto",
-            5: "JanelaSlide",
-        }.get(t, f"Tipo {t}")
-        print(f"  - {nome:<10}: {len(bls)} blocos")
-
     term_blocks = len(blocks_by_type.get(1, set()))
     window_blocks = len(blocks_by_type.get(5, set()))
 
@@ -175,6 +164,12 @@ def word_embedding(
         term_blocks, window_blocks, blocks_by_type_set = (
             count_connected_term_blocks(state, g_sbm_input)
         )
+        print(f"\n[INFO] Blocos conectados PÓS-SBM:")
+        for tipo, block_set in blocks_by_type_set.items():
+            tipo_names = {0: "Doc", 1: "Termo", 3: "Janela", 5: "JanelaSlide"}
+            print(
+                f"  {tipo_names.get(tipo, f'Tipo {tipo}')}: {len(block_set)} blocos conectados"
+            )
 
         # Converter blocks_by_type_set para contagem (quantos blocos por tipo)
         blocks_post_sbm = {
@@ -205,10 +200,6 @@ def word_embedding(
         for v in g_sbm_input.vertices():
             vertices_by_tipo[int(g_sbm_input.vp["tipo"][v])] += 1
 
-        print(f"\n[DEBUG] Vértices em g_sbm_input por tipo:")
-        for tipo, count in sorted(vertices_by_tipo.items()):
-            tipo_names = {0: "Doc", 1: "Termo", 5: "JanelaSlide"}
-            print(f"  Tipo {tipo} ({tipo_names.get(tipo, '?')}): {count}")
 
         for v in g_sbm_input.vertices():
             t = int(g_sbm_input.vp["tipo"][v])
@@ -230,8 +221,6 @@ def word_embedding(
                 row["term"] = name
 
             sbm_rows.append(row)
-
-        print(f"[DEBUG] sbm_rows gerados: {len(sbm_rows)}")
 
         # ====== Documentos (tipo 0) — label por maioria ======
         doc_rows = []
@@ -292,7 +281,6 @@ def word_embedding(
                 }
             )
 
-        print(f"[DEBUG] doc_rows gerados: {len(doc_rows)}")
         sbm_rows.extend(doc_rows)
 
         # ====== W2V clustering (somente termos) ======
@@ -318,8 +306,6 @@ def word_embedding(
                     "label": label,
                 }
             )
-
-        print(f"[DEBUG] w2v_rows gerados: {len(w2v_rows)}")
 
         yield sbm_rows, w2v_rows, sbm_entropy, k_blocks, vertices_pre_sbm, blocks_post_sbm, term_blocks, window_blocks, k_blocks, w2v_sg, w2v_window, w2v_vector_size
 
@@ -540,9 +526,6 @@ def main():
                 partitions_df["window"].iloc[0]
                 if len(partitions_df) > 0
                 else "?"
-            )
-            print(
-                f"[SAVED] Config {config_idx:04d} | Run {run_idx:04d} | Window {window_size} | {partition_file}"
             )
 
 
