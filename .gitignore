@@ -11,3 +11,5 @@ data_lucas_argentina169.zstd
 /__pycache__
 
 /src/word_embedding/__pycache__
+
+/src/word_embedding/token_histogram_analysis.py
