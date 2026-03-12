@@ -96,9 +96,13 @@ def word_embedding(
     n_blocks=None,
     fixed_seed=None,
     nested=False,
+    layered=False,
 ):
     """
     Retorna também as informações do grafo, blocos e W2V.
+    
+    Args:
+        layered: Se True, usa LayeredBlockState no SBM para grafos com múltiplas camadas.
     """
     w2v_models = {
         w: w2vec_kmeans.get_or_train_w2v_model({}, w, df_docs, nlp)
@@ -138,7 +142,7 @@ def word_embedding(
             raise ValueError(f"graph_type desconhecido: {graph_type}")
 
         # Aplicar SBM no grafo apropriado
-        state = graph_sbm.sbm(g_sbm_input, n_blocks=None, nested=nested)
+        state = graph_sbm.sbm(g_sbm_input, n_blocks=None, nested=nested, layered=layered)
 
         # >>> EXTRAIR ENTROPY DO SBM
         try:
@@ -315,7 +319,7 @@ def parse_and_validate_arguments():
     Parse e valida os argumentos da linha de comando.
     
     Retorna:
-        tuple: (n_runs, n_samples, fixed_seed, WINDOW_LIST, graph_type, n_blocks, nested, OUT_CONF)
+        tuple: (n_runs, n_samples, fixed_seed, WINDOW_LIST, graph_type, n_blocks, nested, layered, OUT_CONF)
     """
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -341,6 +345,12 @@ def parse_and_validate_arguments():
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Usa SBM em modo nested.",
+    )
+    parser.add_argument(
+        "--layered",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Usa LayeredBlockState no SBM para grafos com múltiplas camadas.",
     )
     parser.add_argument(
         "--windows",
@@ -388,7 +398,7 @@ def parse_and_validate_arguments():
     WINDOW_LIST = [_parse_win(w) for w in args.windows]
     OUT_CONF = Path("../outputs/conf")
 
-    return n_runs, n_samples, fixed_seed, WINDOW_LIST, args.graph_type, args.n_blocks, args.nested, OUT_CONF
+    return n_runs, n_samples, fixed_seed, WINDOW_LIST, args.graph_type, args.n_blocks, args.nested, args.layered, OUT_CONF
 
 
 def prepare_dataframe(n_samples, fixed_seed):
@@ -404,8 +414,8 @@ def prepare_dataframe(n_samples, fixed_seed):
         tuple: (df_docs, nlp, n_samples_real) - DataFrame processado, modelo spaCy e n_samples ajustado
     """
     # >>> FILTRO DE TOKENS (comentar para desabilitar)
-    MIN_TOKENS = 100
-    # MIN_TOKENS = None  # ← Descomente para desabilitar o filtro
+    # MIN_TOKENS = 100
+    MIN_TOKENS = None  # ← Descomente para desabilitar o filtro
     
     nlp = spacy.load("en_core_web_sm")
     df_full = pd.read_parquet("../data_lucas_argentina169.zstd")
@@ -442,7 +452,7 @@ def prepare_dataframe(n_samples, fixed_seed):
 
 def main():
     # Parse argumentos
-    n_runs, n_samples, fixed_seed, WINDOW_LIST, graph_type, n_blocks, nested, OUT_CONF = (
+    n_runs, n_samples, fixed_seed, WINDOW_LIST, graph_type, n_blocks, nested, layered, OUT_CONF = (
         parse_and_validate_arguments()
     )
 
@@ -463,6 +473,7 @@ def main():
         print(f"Seed usada (fixa): {fixed_seed}")
         print(f"Janelas: {WINDOW_LIST}")
         print(f"Tipo de Grafo: {graph_type}")
+        print(f"Layered SBM: {layered}")
 
         # >>> MODIFICADO: processar cada janela SEPARADAMENTE
         for (
@@ -486,6 +497,7 @@ def main():
             n_blocks=n_blocks,
             fixed_seed=fixed_seed,
             nested=nested,
+            layered=layered,
         ):
             partitions_rows = []
             partitions_rows.extend(sbm_rows)
@@ -520,6 +532,7 @@ def main():
                     seed=fixed_seed,
                     graph_type=graph_type,
                     nested=nested,
+                    layered=layered,
                     n_blocks=n_blocks,
                     run_idx=r + 1,
                     partitions_df=partitions_df,

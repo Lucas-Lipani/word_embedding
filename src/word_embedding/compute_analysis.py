@@ -42,17 +42,17 @@ def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray) -> dict:
 
 
 def find_all_configs_by_corpus(
-    base_conf_dir: Path, seed: int, n_samples: int
+    base_conf_dir: Path, seed: int, n_samples: int, graph_type: str | None = None, layered: bool | None = None
 ) -> dict:
     """
-    Find ALL configs that share seed + n_samples.
+    Find ALL configs that share seed + n_samples (+ graph_type + layered se especificados).
 
     Returns:
-      dict {config_idx: {"model": "sbm"|"w2v+kmeans", "windows": [...], "config_dir": Path}}
+      dict {config_idx: {"model": "sbm"|"w2v+kmeans", "windows": [...], "graph_type": str, "layered": bool, "config_dir": Path}}
     """
     configs_found = {}
 
-    for config_dir in sorted(base_conf_dir.glob("????")):
+    for config_dir in sorted(base_conf_dir.glob("????")):        
         config_file = config_dir / "config.json"
         if not config_file.exists():
             continue
@@ -65,8 +65,17 @@ def find_all_configs_by_corpus(
             cfg_samples = cfg.get("corpus", {}).get("number_of_documents")
             cfg_model_kind = cfg.get("model", {}).get("kind")
             cfg_window = cfg.get("graph", {}).get("window_size")
-
+            cfg_graph_type = cfg.get("graph", {}).get("graph_type")
+            cfg_layered = cfg.get("graph", {}).get("sbm_layered", False)
             if cfg_seed != seed or cfg_samples != n_samples:
+                continue
+            
+            # Filtrar por graph_type se especificado
+            if graph_type is not None and cfg_graph_type != graph_type:
+                continue
+            
+            # Filtrar por layered se especificado
+            if layered is not None and cfg_layered != layered:
                 continue
 
             config_idx = int(config_dir.name)
@@ -75,13 +84,15 @@ def find_all_configs_by_corpus(
                 configs_found[config_idx] = {
                     "model": cfg_model_kind,
                     "windows": [],
+                    "graph_type": cfg_graph_type,
+                    "layered": cfg_layered,
                     "config_dir": config_dir,
                 }
 
             configs_found[config_idx]["windows"].append(str(cfg_window))
 
             print(
-                f"  [FOUND] Config {config_idx:04d}: model={cfg_model_kind}, window={cfg_window}"
+                f"  [FOUND] Config {config_idx:04d}: model={cfg_model_kind}, graph_type={cfg_graph_type}, layered={cfg_layered}, window={cfg_window}"
             )
 
         except Exception as e:
@@ -406,25 +417,33 @@ def compute_global_analysis(
     n_samples: int,
     base_conf_dir: Path = Path("../outputs/conf"),
     base_analyses_dir: Path = Path("../outputs/analyses"),
+    graph_type: str | None = None,
+    layered: bool | None = None,
 ):
     """
-    Global comparisons among ALL configs with same seed + n_samples.
+    Global comparisons among ALL configs with same seed + n_samples (+ graph_type + layered se especificados).
     Runs: sbm_vs_sbm, sbm_vs_w2v, w2v_vs_w2v.
 
     Optimized behavior:
       - only same-window comparisons (window_x == window_y)
       - intra-modal compares run pairs within same window (run_x < run_y)
       - cross-modal compares run_x (A) vs run_y (B) within same window
+    
+    Args:
+      graph_type: Se especificado, filtra apenas configs com esse tipo de grafo.
+                  Se None, considera TODOS os tipos.
+      layered: Se especificado, filtra apenas configs com/sem LayeredBlockState.
+               Se None, considera AMBOS.
     """
 
     print(f"\n[ANALYSIS] Procurando TODAS as configs:")
-    print(f"  seed={seed}, samples={n_samples}")
+    print(f"  seed={seed}, samples={n_samples}, graph_type={graph_type if graph_type else 'ALL'}, layered={layered if layered is not None else 'ALL'}")
 
     base_conf_dir = Path(base_conf_dir)
     base_analyses_dir = Path(base_analyses_dir)
     base_analyses_dir.mkdir(parents=True, exist_ok=True)
 
-    configs_found = find_all_configs_by_corpus(base_conf_dir, seed, n_samples)
+    configs_found = find_all_configs_by_corpus(base_conf_dir, seed, n_samples, graph_type, layered)
 
     if not configs_found:
         print("[ERROR] Nenhuma config encontrada", file=sys.stderr)
@@ -434,7 +453,7 @@ def compute_global_analysis(
     for idx in sorted(configs_found.keys()):
         cfg = configs_found[idx]
         print(
-            f"  Config {idx:04d}: {cfg['model']} | windows: {cfg['windows']}"
+            f"  Config {idx:04d}: {cfg['model']} | graph_type: {cfg.get('graph_type', 'N/A')} | layered: {cfg.get('layered', 'N/A')} | windows: {cfg['windows']}"
         )
 
     sbm_configs = {
@@ -560,7 +579,7 @@ def compute_global_analysis(
             comparison_name,
             corpus_seed=seed,
             n_samples=n_samples,
-            graph_type=None,
+            graph_type=graph_type,
         )
 
         df_summary = df_result.drop(
@@ -582,7 +601,7 @@ def compute_global_analysis(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Análises GLOBAIS entre TODAS as configs (seed + samples)."
+        description="Análises GLOBAIS entre TODAS as configs (seed + samples + graph_type + layered opcional)."
     )
     parser.add_argument(
         "--seed", "-s", type=int, required=True, help="Seed do corpus"
@@ -590,9 +609,27 @@ if __name__ == "__main__":
     parser.add_argument(
         "--samples", type=int, required=True, help="Número de amostras"
     )
+    parser.add_argument(
+        "--graph-type",
+        type=str,
+        default=None,
+        choices=[
+            "Document-Window-Term",
+            "Document-SlideWindow-Term",
+            "Document-Context-Window-Term",
+            "Document-Term",
+        ],
+        help="Tipo de grafo a filtrar. Se não especificado, analisa TODOS os tipos.",
+    )
+    parser.add_argument(
+        "--layered",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Filtrar por LayeredBlockState (True/False). Se não especificado, analisa AMBOS.",
+    )
     args = parser.parse_args()
 
-    all_success = compute_global_analysis(args.seed, args.samples)
+    all_success = compute_global_analysis(args.seed, args.samples, graph_type=args.graph_type, layered=args.layered)
 
     if all_success:
         print("\n✓ Análises concluídas com sucesso!")

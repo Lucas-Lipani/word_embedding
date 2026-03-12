@@ -11,6 +11,7 @@ def save_partitions_by_config(
     seed: int,
     graph_type: str,
     nested: bool,
+    layered: bool,
     n_blocks: int | None,
     run_idx: int,
     partitions_df: pd.DataFrame,
@@ -37,6 +38,7 @@ def save_partitions_by_config(
             seed=seed,
             graph_type=graph_type,
             nested=nested,
+            layered=layered,
             n_blocks=n_blocks,
             window_size=window_size,
         )
@@ -50,6 +52,7 @@ def save_partitions_by_config(
         seed=seed,
         graph_type=graph_type,
         nested=nested,
+        layered=layered,
         n_blocks=n_blocks,
         window_size=window_size,
     )
@@ -62,6 +65,7 @@ def save_partitions_by_config(
         seed=seed,
         graph_type=graph_type,
         nested=nested,
+        layered=layered,
         n_blocks=n_blocks,
         window_size=window_size,
     )
