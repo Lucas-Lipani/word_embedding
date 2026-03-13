@@ -42,11 +42,15 @@ def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray) -> dict:
 
 
 def find_all_configs_by_corpus(
-    base_conf_dir: Path, seed: int, n_samples: int, graph_type: str | None = None, layered: bool | None = None
+    base_conf_dir: Path, seed: int, n_samples: int, graph_type: str | None = None, layered: bool = False
 ) -> dict:
     """
-    Find ALL configs that share seed + n_samples (+ graph_type + layered se especificados).
-
+    Find ALL configs that share seed + n_samples (+ graph_type + layered).
+    
+    IMPORTANT: 
+      - layered is always a boolean (default False), NEVER None
+      - graph_type can be None (=ALL types) or a specific type
+    
     Returns:
       dict {config_idx: {"model": "sbm"|"w2v+kmeans", "windows": [...], "graph_type": str, "layered": bool, "config_dir": Path}}
     """
@@ -67,6 +71,7 @@ def find_all_configs_by_corpus(
             cfg_window = cfg.get("graph", {}).get("window_size")
             cfg_graph_type = cfg.get("graph", {}).get("graph_type")
             cfg_layered = cfg.get("graph", {}).get("sbm_layered", False)
+            
             if cfg_seed != seed or cfg_samples != n_samples:
                 continue
             
@@ -74,8 +79,8 @@ def find_all_configs_by_corpus(
             if graph_type is not None and cfg_graph_type != graph_type:
                 continue
             
-            # Filtrar por layered se especificado
-            if layered is not None and cfg_layered != layered:
+            # STRICT: sempre filtra por layered (nunca None)
+            if cfg_layered != layered:
                 continue
 
             config_idx = int(config_dir.name)
@@ -418,10 +423,10 @@ def compute_global_analysis(
     base_conf_dir: Path = Path("../outputs/conf"),
     base_analyses_dir: Path = Path("../outputs/analyses"),
     graph_type: str | None = None,
-    layered: bool | None = None,
+    layered: bool = False,
 ):
     """
-    Global comparisons among ALL configs with same seed + n_samples (+ graph_type + layered se especificados).
+    Global comparisons among ALL configs with same seed + n_samples (+ graph_type + layered).
     Runs: sbm_vs_sbm, sbm_vs_w2v, w2v_vs_w2v.
 
     Optimized behavior:
@@ -430,14 +435,19 @@ def compute_global_analysis(
       - cross-modal compares run_x (A) vs run_y (B) within same window
     
     Args:
-      graph_type: Se especificado, filtra apenas configs com esse tipo de grafo.
-                  Se None, considera TODOS os tipos.
-      layered: Se especificado, filtra apenas configs com/sem LayeredBlockState.
-               Se None, considera AMBOS.
+      seed: Corpus seed
+      n_samples: Number of samples
+      base_conf_dir: Base directory for configs
+      base_analyses_dir: Base directory for analyses
+      graph_type: If specified, filter only configs with this graph type.
+                  If None, considers ALL types.
+      layered: If True, filter only LayeredBlockState configs.
+               If False (default), filter only non-layered configs.
     """
 
-    print(f"\n[ANALYSIS] Procurando TODAS as configs:")
-    print(f"  seed={seed}, samples={n_samples}, graph_type={graph_type if graph_type else 'ALL'}, layered={layered if layered is not None else 'ALL'}")
+    layered_str = "True (LayeredBlockState)" if layered else "False (Normal SBM)"
+    print(f"\n[ANALYSIS] Procurando configs:")
+    print(f"  seed={seed}, samples={n_samples}, graph_type={graph_type if graph_type else 'ALL'}, layered={layered_str}")
 
     base_conf_dir = Path(base_conf_dir)
     base_analyses_dir = Path(base_analyses_dir)
@@ -624,8 +634,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--layered",
         action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Filtrar por LayeredBlockState (True/False). Se não especificado, analisa AMBOS.",
+        default=False,
+        help="Usar LayeredBlockState. Padrão é False (modelos normais). Use --layered para True ou --no-layered para False explicitamente.",
     )
     args = parser.parse_args()
 
