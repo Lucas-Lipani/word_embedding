@@ -178,6 +178,13 @@ def plot_average_heatmaps(analysis_dir: Path):
 
             ax.invert_yaxis()
 
+            # Destacar a diagonal principal
+            n = len(pivot)
+            for i in range(n):
+                ax.add_patch(plt.Rectangle((i, i), 1, 1, 
+                                          fill=False, edgecolor='red', 
+                                          lw=2.5, zorder=10))
+
             plt.title(f"{metric.upper()}: {title_suffix}")
             plt.xlabel(model_y_label)
             plt.ylabel(model_x_label)
