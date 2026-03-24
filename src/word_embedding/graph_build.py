@@ -60,14 +60,6 @@ def build_window_graph(g, df, nlp, w):
         df.iterrows(), desc="Processando Doc-Jan-Termos", total=len(df)
     ):
         doc_id = str(idx)
-        abstract = row["abstract"]
-
-        # abstract = (
-        #     "Janela de teste para analisar se está fazendo tudo certo, caso "
-        #     "esteja tudo certo, irei analisar o próximo."
-        # )
-        # print("Abstract")
-        # print(abstract)
 
         # ───── vértice Documento ─────
         v_doc = g.add_vertex()
@@ -79,11 +71,7 @@ def build_window_graph(g, df, nlp, w):
         doc_vertex[doc_id] = v_doc
 
         # tokenização
-        toks = [
-            t.text.lower().strip()
-            for t in nlp(abstract)
-            if not t.is_stop and not t.is_punct
-        ]
+        toks = row["tokens"]
 
         #  tamanho da janela de contexto
         if w == "full":
@@ -192,16 +180,6 @@ def build_window_graph_and_sliding(df, nlp, w, save_visualizations=False):
         df.iterrows(), desc="Processando documentos", total=len(df)
     ):
         doc_id = str(idx)
-        # abstract = row["abstract"]
-        # abstract = (
-        #     "Janela de teste para analisar se está fazendo tudo certo, caso "
-        #     "esteja tudo certo, irei analisar o próximo."
-        # )
-
-        # doc = nlp(abstract)
-        # tokens = [
-        #     t.text.lower().strip() for t in doc if not t.is_stop and not t.is_punct
-        # ]
         tokens = row["tokens"]
 
         # Tamanho local da janela

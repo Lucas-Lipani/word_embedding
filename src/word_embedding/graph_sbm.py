@@ -41,10 +41,15 @@ def sbm(
             )
         # Nested: escolhe o base state automaticamente ou força o Layered quando necessário
         if state_cls is None:
-            state = minimize_nested_blockmodel_dl(g, state_args=state_args)
+            state = minimize_nested_blockmodel_dl(
+                g, 
+                state_args=state_args
+            )
         else:
             state = minimize_nested_blockmodel_dl(
-                g, state=state_cls, state_args=state_args
+                g,
+                state=state_cls,
+                state_args=state_args
             )
     else:
         # Não-nested: permitir fixar B
@@ -55,7 +60,9 @@ def sbm(
 
         if state_cls is None:
             state = minimize_blockmodel_dl(
-                g, state_args=state_args, multilevel_mcmc_args=mcmc_args
+                g,
+                state_args=state_args, 
+                multilevel_mcmc_args=mcmc_args
             )
         else:
             state = minimize_blockmodel_dl(

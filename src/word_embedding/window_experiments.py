@@ -88,6 +88,20 @@ def tokenize_abstracts(df, nlp):
     return df
 
 
+def _get_graph_build_window(window_size: int | str, graph_type: str) -> int | str:
+    """
+    Returns the internal window used only for graph construction.
+
+    The original window_size must remain unchanged for the rest of the pipeline.
+
+    Only Document-Window-Term needs an internal adaptation because it uses
+    centered context on both sides of the target term.
+    """
+    if graph_type == "Document-Window-Term" and window_size != "full":
+        return max(1, int(window_size) // 2)
+    return window_size
+
+
 def word_embedding(
     df_docs,
     nlp,
@@ -134,8 +148,11 @@ def word_embedding(
                 g_win_term
             )
         elif graph_type == "Document-Window-Term":
+            # Adaptar tamanho de janela para compensar contexto bilateral
+            graph_build_window = _get_graph_build_window(sbm_window, graph_type)
+            # print(f"[ADAPT] Document-Window-Term: janela {sbm_window} → {graph_build_window}")
             g_full = graph_build.build_window_graph(
-                graph_build.initialize_graph(), df_docs, nlp, sbm_window
+                graph_build.initialize_graph(), df_docs, nlp, graph_build_window
             )
             g_sbm_input = graph_build.extract_window_term_graph(g_full)
         else:
@@ -209,6 +226,7 @@ def word_embedding(
             t = int(g_sbm_input.vp["tipo"][v])
             name = g_sbm_input.vp["name"][v]
             sbm_lbl = int(blocks_vec[int(v)])
+            freq = int(g_sbm_input.vp["amount"][v]) if "amount" in g_sbm_input.vp else 0
 
             row = {
                 "window": sbm_window,
@@ -218,6 +236,7 @@ def word_embedding(
                 "label": sbm_lbl,
                 "doc_id": None,
                 "term": None,
+                "freq": freq,  
             }
 
             if t == 1:
@@ -299,6 +318,8 @@ def word_embedding(
                 continue
             term = g_dt.vp["name"][v]
             label = int(g_dt.vp["cluster"][v])
+            freq = int(g_dt.vp["amount"][v]) if "amount" in g_dt.vp else 0
+            
             w2v_rows.append(
                 {
                     "window": sbm_window,
@@ -308,6 +329,7 @@ def word_embedding(
                     "tipo": 1,
                     "doc_id": None,
                     "label": label,
+                    "freq": freq, 
                 }
             )
 
@@ -403,52 +425,58 @@ def parse_and_validate_arguments():
 
 def prepare_dataframe(n_samples, fixed_seed):
     """
-    Carrega, filtra e tokeniza o dataframe.
-    Se n_samples > total de documentos, limita ao máximo.
-    
-    Args:
-        n_samples (int): Número de documentos para amostrar
-        fixed_seed (int): Seed para reprodutibilidade
-        
+    Load the corpus, shuffle it deterministically, and tokenize only until
+    enough valid documents are found.
+
+    A document is considered valid if:
+    - it has a non-null abstract
+    - it satisfies MIN_TOKENS when this filter is enabled
+
     Returns:
-        tuple: (df_docs, nlp, n_samples_real) - DataFrame processado, modelo spaCy e n_samples ajustado
+        tuple: (df_docs, nlp, n_samples_real)
     """
-    # >>> FILTRO DE TOKENS (comentar para desabilitar)
     # MIN_TOKENS = 100
-    MIN_TOKENS = None  # ← Descomente para desabilitar o filtro
-    
+    MIN_TOKENS = None  # Set to an integer to enable filtering
+
     nlp = spacy.load("en_core_web_sm")
     df_full = pd.read_parquet("../data_lucas_argentina169.zstd")
 
-    # Manter apenas linhas com abstracts válidos
+    # Keep only valid abstracts
     df_full = df_full[df_full["abstract"].notna()].copy()
     df_full["abstract"] = df_full["abstract"].astype(str)
 
-    # Tokenizar ANTES do filtro de mínimo de tokens
-    print(f"[LOAD] Total de documentos: {len(df_full)}")
-    df_full = tokenize_abstracts(df_full, nlp)
-    
-    # >>> FILTRO: Manter apenas docs com MIN_TOKENS tokens ou mais
-    if MIN_TOKENS is not None:
-        df_filtered = df_full[df_full["tokens"].apply(len) >= MIN_TOKENS].copy()
-        docs_filtered_out = len(df_full) - len(df_filtered)
-        print(f"⏺ Filtro: {len(df_full)} → {len(df_filtered)} docs (removidos: {docs_filtered_out} com < {MIN_TOKENS} tokens)")
-        df_full = df_filtered
-    
-    # Ajustar n_samples se necessário
-    total_docs = len(df_full)
-    n_samples_real = min(n_samples, total_docs)
-    
-    if n_samples_real < n_samples:
-        print(f"\n⚠ N. de amostras solicitadas ({n_samples}) > documentos disponíveis ({total_docs})")
-        print(f"→ Limitando a {n_samples_real} documentos")
-    else:
-        print(f"\nN. de amostras: {n_samples_real}")
-    
-    df_docs = df_full.sample(n=n_samples_real, random_state=fixed_seed)
-    
-    return df_docs, nlp, n_samples_real
+    print(f"[LOAD] Total documents with valid abstracts: {len(df_full)}")
 
+    # Shuffle deterministically first
+    df_full = df_full.sample(frac=1, random_state=fixed_seed).reset_index(drop=True)
+
+    selected_rows = []
+    selected_tokens = []
+
+    texts = df_full["abstract"].tolist()
+
+    for idx, doc in enumerate(nlp.pipe(texts, batch_size=64)):
+        tokens = [
+            t.text.lower().strip()
+            for t in doc
+            if not t.is_stop and not t.is_punct
+        ]
+
+        if MIN_TOKENS is not None and len(tokens) < MIN_TOKENS:
+            continue
+
+        selected_rows.append(df_full.iloc[idx].copy())
+        selected_tokens.append(tokens)
+
+        if len(selected_rows) >= n_samples:
+            break
+
+    df_docs = pd.DataFrame(selected_rows).reset_index(drop=True)
+    df_docs["tokens"] = selected_tokens
+
+    n_samples_real = len(df_docs)
+
+    return df_docs, nlp, n_samples_real
 
 def main():
     # Parse argumentos
@@ -510,6 +538,8 @@ def main():
             partitions_df["label"] = pd.to_numeric(
                 partitions_df["label"], errors="coerce"
             ).astype("Int64")
+
+            partitions_df["freq"] = partitions_df["freq"].fillna(0).astype("int64")
             if "label_members" in partitions_df.columns:
                 partitions_df["label_members"] = partitions_df[
                     "label_members"

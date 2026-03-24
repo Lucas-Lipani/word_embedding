@@ -8,7 +8,7 @@ import pandas as pd
 import spacy
 
 sys.path.insert(0, "src")
-from word_embedding import graph_build
+from word_embedding import graph_build, window_experiments
 
 
 def create_mini_corpus():
@@ -73,45 +73,37 @@ def test_document_slidewindow_term(df, nlp, windows):
     return all(results)
 
 
-def test_document_window_term(df, nlp, windows):
-    """Testa o grafo Document-Window-Term (janelas centradas, não deslizantes)."""
+def test_document_window_term(df, nlp, window_pairs):
     print(f"\n{'='*70}")
     print(f"Testando: Document-Window-Term")
     print(f"{'='*70}")
 
     results = []
-    for window in windows:
+    for original_window, graph_build_window in window_pairs:
         try:
             g = graph_build.initialize_graph()
-            g = graph_build.build_window_graph(g, df, nlp, window)
+            g = graph_build.build_window_graph(g, df, nlp, graph_build_window)
             g_win_term = graph_build.extract_window_term_graph(g)
 
-            print(f"✓ window={window}")
-            print(
-                f"  g_full: {g.num_vertices()} vértices, {g.num_edges()} arestas"
-            )
-            print(
-                f"  g_win_term: {g_win_term.num_vertices()} vértices, {g_win_term.num_edges()} arestas"
-            )
+            print(f"✓ original window={original_window} | internal={graph_build_window}")
+            print(f"  g_full: {g.num_vertices()} vértices, {g.num_edges()} arestas")
+            print(f"  g_win_term: {g_win_term.num_vertices()} vértices, {g_win_term.num_edges()} arestas")
 
-            # Salvar visualizações
             graph_build.save_graph_visualization(
-                g, f"03_Document-Window-Term_window{window}"
+                g, f"03_Document-Window-Term_window{original_window}"
             )
             graph_build.save_graph_visualization(
-                g_win_term, f"04_Window-Term_window{window}"
+                g_win_term, f"04_Window-Term_window{original_window}"
             )
 
             results.append(True)
         except Exception as e:
-            print(f"✗ window={window} ERRO: {e}")
+            print(f"✗ original window={original_window} ERRO: {e}")
             import traceback
-
             traceback.print_exc()
             results.append(False)
 
     return all(results)
-
 
 def test_document_context_window_term(df, nlp, windows):
     """Testa o grafo Document-Context-Window-Term (tripartido com contexto explícito)."""
@@ -217,8 +209,21 @@ def main():
     results["Document-SlideWindow-Term"] = test_document_slidewindow_term(
         df, nlp, windows
     )
+    # Para o Document-Window-Term, precisamos adaptar as janelas para o formato centrado, 
+    # porém quero que seja uma tupla  aonde eu consiga resgatar ao fim o valor inicial da janela, ou seja, 
+    # a janela deslizante de 3 se torna (1,1) e a de 5 se torna (2,2) e a de 20 se torna (10,10) e a de full se torna (full,full)
+    # Para isso, vou criar uma função de adaptação que recebe a janela original e retorna a tupla adaptada.
+
+    window_pairs = []
+    for window in windows:
+        graph_build_window = window_experiments._get_graph_build_window(
+            window, "Document-Window-Term"
+        )
+
+        window_pairs.append((window, graph_build_window))
+
     results["Document-Window-Term"] = test_document_window_term(
-        df, nlp, windows
+        df, nlp, window_pairs
     )
     results["Document-Context-Window-Term"] = (
         test_document_context_window_term(df, nlp, windows)

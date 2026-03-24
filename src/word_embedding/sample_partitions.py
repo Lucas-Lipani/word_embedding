@@ -59,7 +59,9 @@ def find_matching_partition(
     config: int | None = None,
     run: int | None = None,
     seed: str | None = None,
-) -> tuple[Path, Path, str, str] | None:
+    graph_type: str | None = None,
+    sbm_layered: bool | None = None,
+) -> tuple[Path, Path, str, str, dict] | None:
     """
     Procura por partition.parquet que corresponda aos critérios.
 
@@ -67,11 +69,12 @@ def find_matching_partition(
       - Procura especificamente naquele run
 
     Se apenas model+window são fornecidos (sem config/run):
-      - Varre todas as configs buscando model+window
+      - Varre todas as configs buscando model+window+graph_type+sbm_layered
       - Se seed é fornecido, filtra por seed
       - Se múltiplas configs encontram, retorna lista e pede confirmação
+      - Default: sbm_layered=True se não especificado
 
-    :return: (config_dir, partition_file, model, window) ou None se não encontrado
+    :return: (config_dir, partition_file, model, window, config_data) ou None se não encontrado
     """
     base = Path("../outputs/conf")
 
@@ -115,6 +118,16 @@ def find_matching_partition(
                 )
             return None
 
+        # Carregar config para verificar graph_type e sbm_variant
+        config_file = config_dir / "config.json"
+        config_data = {}
+        if config_file.exists():
+            try:
+                with open(config_file, "r") as f:
+                    config_data = json.load(f)
+            except Exception:
+                pass
+
         # Verificar se model+window estão no parquet
         df = pd.read_parquet(partition_file)
         has_model_window = not df[
@@ -138,10 +151,19 @@ def find_matching_partition(
             )
             return None
 
-        return (config_dir, partition_file, model, str(window))
+        return (config_dir, partition_file, model, str(window), config_data)
 
     # CASO 2: apenas model+window (busca genérica)
     print(f"\n[SEARCH] Procurando model={model}, window={window}")
+    if graph_type:
+        print(f"[SEARCH] Graph type: {graph_type}")
+    
+    # Default: sbm_layered=True se não especificado
+    if sbm_layered is None:
+        sbm_layered = True
+        print(f"[SEARCH] SBM layered: {sbm_layered} (default)")
+    else:
+        print(f"[SEARCH] SBM layered: {sbm_layered}")
 
     matching_configs = []
 
@@ -149,7 +171,7 @@ def find_matching_partition(
         if not config_dir.is_dir():
             continue
 
-        # Carregar config.json para extrair seed
+        # Carregar config.json para extrair seed, graph_type e sbm_layered
         config_file = config_dir / "config.json"
         if not config_file.exists():
             continue
@@ -158,7 +180,17 @@ def find_matching_partition(
             with open(config_file, "r") as f:
                 cfg = json.load(f)
                 config_seed = cfg.get("corpus", {}).get("seed")
+                cfg_graph_type = cfg.get("graph", {}).get("graph_type")
+                cfg_sbm_layered = cfg.get("graph", {}).get("sbm_layered", False)  # Default False
         except Exception:
+            continue
+
+        # Filtrar por graph_type se especificado
+        if graph_type is not None and cfg_graph_type != graph_type:
+            continue
+
+        # Filtrar por sbm_layered
+        if cfg_sbm_layered != sbm_layered:
             continue
 
         # Se seed foi especificada, filtrar
@@ -173,6 +205,12 @@ def find_matching_partition(
         run_dirs = sorted((config_dir / "run").glob("????"))
 
         for run_dir in run_dirs:
+            run_idx = int(run_dir.name)
+            
+            
+            if run is not None and run_idx != run:
+                continue
+            
             partition_file = run_dir / "partition.parquet"
             if not partition_file.exists():
                 continue
@@ -185,15 +223,17 @@ def find_matching_partition(
                 ].empty
 
                 if has_model_window:
-                    run_idx = int(run_dir.name)
                     config_idx = int(config_dir.name)
                     matching_configs.append(
                         {
                             "config": config_idx,
                             "run": run_idx,
                             "seed": config_seed,
+                            "graph_type": cfg_graph_type,
+                            "sbm_layered": cfg_sbm_layered,
                             "partition_file": partition_file,
                             "config_dir": config_dir,
+                            "config_data": cfg,
                         }
                     )
             except Exception:
@@ -204,8 +244,11 @@ def find_matching_partition(
             f"[ERROR] Nenhuma partição encontrada para model={model}, window={window}",
             file=sys.stderr,
         )
+        if graph_type:
+            print(f"[ERROR] Com graph_type={graph_type}", file=sys.stderr)
+        print(f"[ERROR] Com sbm_layered={sbm_layered}", file=sys.stderr)
         if seed is not None:
-            print(f"[HINT] Com seed={seed}", file=sys.stderr)
+            print(f"[ERROR] Com seed={seed}", file=sys.stderr)
         return None
 
     # Se encontrou exatamente uma, retorna
@@ -214,11 +257,13 @@ def find_matching_partition(
         print(
             f"[FOUND] Config {match['config']:04d}, run {match['run']:04d}, seed={match['seed']}"
         )
+        print(f"        Graph: {match['graph_type']} | SBM Layered: {match['sbm_layered']}")
         return (
             match["config_dir"],
             match["partition_file"],
             model,
             str(window),
+            match["config_data"],
         )
 
     # Se encontrou múltiplas, agrupa por seed e pede confirmação
@@ -234,7 +279,13 @@ def find_matching_partition(
         matches = by_seed[s]
         print(f"\n  Seed {s}:")
         for m in matches:
-            print(f"    - config {m['config']:04d}, run {m['run']:04d}")
+            print(f"    - config {m['config']:04d}, run {m['run']:04d} | {m['graph_type']} | Layered: {m['sbm_layered']}")
+
+
+    if run is not None and len(matching_configs) > 0:
+        match = matching_configs[0]
+        print(f"\n[SELECT] Config {match['config']:04d}, run {match['run']:04d}")
+        return (match["config_dir"], match["partition_file"], model, str(window), match["config_data"])
 
     if seed is None:
         print(
@@ -246,7 +297,7 @@ def find_matching_partition(
     # Retornar a primeira encontrada com seed especificado
     match = matching_configs[0]
     print(f"\n[SELECT] Config {match['config']:04d}, run {match['run']:04d}")
-    return (match["config_dir"], match["partition_file"], model, str(window))
+    return (match["config_dir"], match["partition_file"], model, str(window), match["config_data"])
 
 
 def main():
@@ -276,45 +327,59 @@ def main():
     ap.add_argument(
         "--seed",
         "-s",
+        type=int,
+        required=True,
+        help="[OBRIGATÓRIO] Seed usado na geração das partições (ex: 12345)",
+    )
+    ap.add_argument(
+        "--graph-type",
         type=str,
         default=None,
-        help="[OPCIONAL] Seed para filtrar (ex: 42)",
+        help="[OPCIONAL] Tipo de grafo (ex: Document-Term, Document-Window-Term, Document-SlideWindow-Term)",
+    )
+    ap.add_argument(
+        "--sbm-layered",
+        action="store_true",
+        default=None,
+        help="[OPCIONAL] Procurar por SBM layered=True. Se não passar, usa True por padrão.",
+    )
+    ap.add_argument(
+        "--sbm-flat",
+        action="store_true",
+        default=False,
+        help="[OPCIONAL] Procurar por SBM layered=False (flat)",
     )
     ap.add_argument(
         "--print-k", type=int, default=5, help="Quantas partições imprimir"
     )
     ap.add_argument(
-        "--corpus",
-        default="../wos_sts_journals.parquet",
-        help="Caminho do corpus",
-    )
-    ap.add_argument(
-        "--text-col", default="abstract", help="Coluna de texto no corpus"
-    )
-    ap.add_argument(
-        "--random-seed", type=int, help="Seed para amostrar partições"
-    )
-    ap.add_argument(
-        "--samples", type=int, default=100, help="Número de samples do corpus"
+        "--samples", type=int, required=True, help="[OBRIGATÓRIO] Número de documentos usados na geração das partições"
     )
     args = ap.parse_args()
 
-    if args.random_seed is not None:
-        random.seed(args.random_seed)
-
+    # Determinar sbm_layered a partir dos argumentos
+    sbm_layered_filter = None
+    if args.sbm_flat:
+        sbm_layered_filter = False
+    elif args.sbm_layered:
+        sbm_layered_filter = True
+    # Se nenhum foi passado, deixa None (será setado como True por default na função)
+    
     # Buscar partição
     result = find_matching_partition(
         model=args.model,
         window=args.window,
         config=args.config,
         run=args.run,
-        seed=args.seed,
+        seed=str(args.seed),
+        graph_type=args.graph_type,
+        sbm_layered=sbm_layered_filter,
     )
 
     if result is None:
         sys.exit(1)
 
-    config_dir, partition_file, model, window = result
+    config_dir, partition_file, model, window, config_data = result
 
     # Carregar parquet
     try:
@@ -347,17 +412,16 @@ def main():
         print("[ERROR] Sem termos neste parquet.", file=sys.stderr)
         sys.exit(1)
 
-    # Recontar frequências do corpus
-    try:
-        tf = recount_freqs_from_corpus(
-            Path(args.corpus), args.text_col, args.samples, 42
-        )
-    except Exception as e:
-        print(f"[ERROR] Falha ao contar frequências: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    tf = tf[tf["term"].isin(terms_df["term"].unique())]
-    merged = terms_df.merge(tf, on="term", how="left").fillna({"freq": 0})
+    # A frequência já está no parquet como propriedade do vértice (salva em window_experiments.py)
+    # Basta usar a coluna freq que já existe
+    if "freq" in terms_df.columns:
+        # Já tem freq, apenas manter como está
+        merged = terms_df.copy()
+    else:
+        # Fallback: se não tiver freq, usar 1 como padrão (compat com partições antigas)
+        merged = terms_df.copy()
+        merged["freq"] = 1
+    
     merged["freq"] = merged["freq"].astype(int)
 
     labels = merged["label"].unique().tolist()
@@ -380,8 +444,13 @@ def main():
     )
     order = part_stats["label"].tolist()
 
+    # Extrair informações do config_data
+    graph_type = config_data.get("graph", {}).get("graph_type", "unknown")
+    sbm_layered = config_data.get("graph", {}).get("sbm_layered", False)
+    window_size = config_data.get("graph", {}).get("window_size", window)
+
     with open(out_txt, "w", encoding="utf-8") as w:
-        header = f"MODEL={model} | WINDOW={window} | CONFIG={config_idx:04d} | RUN={run_idx:04d}"
+        header = f"MODEL={model} | WINDOW={window_size} | GRAPH={graph_type} | SBM_LAYERED={sbm_layered} | CONFIG={config_idx:04d} | RUN={run_idx:04d}"
         w.write(header + "\n" + "=" * len(header) + "\n\n")
 
         for lbl in order:
@@ -402,8 +471,9 @@ def main():
     chosen = sorted(random.sample(labels, k))
 
     print(
-        f"\n=== MODEL: {model} | WINDOW: {window} | CONFIG: {config_idx:04d} | RUN: {run_idx:04d} ==="
+        f"\n=== MODEL: {model} | WINDOW: {window_size} | GRAPH: {graph_type} | SBM_LAYERED: {sbm_layered} ==="
     )
+    print(f"=== CONFIG: {config_idx:04d} | RUN: {run_idx:04d} ===")
     print(f"[SAVED] {out_txt}\n")
 
     for lbl in chosen:
