@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import argparse
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -11,13 +12,50 @@ def _window_sort_key(w):
         return (1, str(w))
 
 
-def plot_scatter_by_window(analysis_dir: Path, metric: str = "nmi"):
-    df = pd.read_parquet(analysis_dir / "results.parquet")
+def _load_comparison_type(analysis_dir: Path) -> str:
+    config_file = analysis_dir / "config.json"
+    if not config_file.exists():
+        raise FileNotFoundError(f"Config file not found: {config_file}")
 
+    with open(config_file, "r", encoding="utf-8") as f:
+        config = json.load(f)
+
+    comparison_type = config.get("comparison_type")
+    if comparison_type is None:
+        raise ValueError("Missing 'comparison_type' in config.json")
+
+    return comparison_type
+
+
+def _filter_dataframe(df: pd.DataFrame, comparison_type: str) -> pd.DataFrame:
     df = df[df["window_x"].astype(str) == df["window_y"].astype(str)].copy()
 
     if "config_x" in df.columns and "config_y" in df.columns:
         df = df[df["config_x"] == df["config_y"]].copy()
+
+    if comparison_type in {"sbm_vs_sbm", "w2v_vs_w2v"}:
+        if "model_x" in df.columns and "model_y" in df.columns:
+            df = df[df["model_x"] == df["model_y"]].copy()
+
+    elif comparison_type == "sbm_vs_w2v":
+        if "model_x" in df.columns and "model_y" in df.columns:
+            df = df[df["model_x"] != df["model_y"]].copy()
+
+    else:
+        raise ValueError(f"Unsupported comparison type: {comparison_type}")
+
+    return df
+
+
+def plot_scatter_by_window(analysis_dir: Path, metric: str = "nmi"):
+    df = pd.read_parquet(analysis_dir / "results.parquet")
+    comparison_type = _load_comparison_type(analysis_dir)
+
+    df = _filter_dataframe(df, comparison_type)
+
+    if df.empty:
+        print(f"[WARN] No data found for comparison type: {comparison_type}")
+        return
 
     df["window"] = df["window_x"].astype(str)
 
@@ -60,7 +98,6 @@ def plot_scatter_by_window(analysis_dir: Path, metric: str = "nmi"):
 
     filename = f"scatter_{metric}.png"
     ax.set_title(filename.replace(".png", "").capitalize())
-
     ax.grid(True, axis="y", alpha=0.3)
 
     out_dir = analysis_dir / "scatter_by_window"
@@ -71,6 +108,8 @@ def plot_scatter_by_window(analysis_dir: Path, metric: str = "nmi"):
     plt.savefig(out_file, dpi=150)
     plt.close()
 
+    print(f"[INFO] Comparison type: {comparison_type}")
+    print(f"[INFO] Number of points: {len(df)}")
     print(f"[OK] Saved: {out_file}")
 
 
