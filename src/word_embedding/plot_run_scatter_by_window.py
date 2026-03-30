@@ -30,10 +30,10 @@ def _load_comparison_type(analysis_dir: Path) -> str:
 def _filter_dataframe(df: pd.DataFrame, comparison_type: str) -> pd.DataFrame:
     df = df[df["window_x"].astype(str) == df["window_y"].astype(str)].copy()
 
-    if "config_x" in df.columns and "config_y" in df.columns:
-        df = df[df["config_x"] == df["config_y"]].copy()
-
     if comparison_type in {"sbm_vs_sbm", "w2v_vs_w2v"}:
+        if "config_x" in df.columns and "config_y" in df.columns:
+            df = df[df["config_x"] == df["config_y"]].copy()
+
         if "model_x" in df.columns and "model_y" in df.columns:
             df = df[df["model_x"] == df["model_y"]].copy()
 
