@@ -502,6 +502,7 @@ def main():
         print(f"Janelas: {WINDOW_LIST}")
         print(f"Tipo de Grafo: {graph_type}")
         print(f"Layered SBM: {layered}")
+        print(f"Nested SBM: {nested}")
 
         # >>> MODIFICADO: processar cada janela SEPARADAMENTE
         for (

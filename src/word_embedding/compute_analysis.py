@@ -424,6 +424,8 @@ def compute_global_analysis(
     base_analyses_dir: Path = Path("../outputs/analyses"),
     graph_type: str | None = None,
     layered: bool = False,
+    nested: bool = False,
+
 ):
     """
     Global comparisons among ALL configs with same seed + n_samples (+ graph_type + layered).
@@ -443,11 +445,14 @@ def compute_global_analysis(
                   If None, considers ALL types.
       layered: If True, filter only LayeredBlockState configs.
                If False (default), filter only non-layered configs.
+      nested: If True, use NestedBlockState.
+              If False (default), use normal SBM.
     """
 
     layered_str = "True (LayeredBlockState)" if layered else "False (Normal SBM)"
+    nested_str = "True (NestedBlockState)" if nested else "False (Normal SBM)"
     print(f"\n[ANALYSIS] Procurando configs:")
-    print(f"  seed={seed}, samples={n_samples}, graph_type={graph_type if graph_type else 'ALL'}, layered={layered_str}")
+    print(f"  seed={seed}, samples={n_samples}, graph_type={graph_type if graph_type else 'ALL'}, layered={layered_str}, nested={nested_str}")
 
     base_conf_dir = Path(base_conf_dir)
     base_analyses_dir = Path(base_analyses_dir)
@@ -463,7 +468,7 @@ def compute_global_analysis(
     for idx in sorted(configs_found.keys()):
         cfg = configs_found[idx]
         print(
-            f"  Config {idx:04d}: {cfg['model']} | graph_type: {cfg.get('graph_type', 'N/A')} | layered: {cfg.get('layered', 'N/A')} | windows: {cfg['windows']}"
+            f"  Config {idx:04d}: {cfg['model']} | graph_type: {cfg.get('graph_type', 'N/A')} | layered: {cfg.get('layered', 'N/A')} | windows: {cfg['windows']} | nested: {cfg.get('nested', 'N/A')}"
         )
 
     sbm_configs = {
@@ -637,9 +642,15 @@ if __name__ == "__main__":
         default=False,
         help="Usar LayeredBlockState. Padrão é False (modelos normais). Use --layered para True ou --no-layered para False explicitamente.",
     )
+    parser.add_argument(
+        "--nested",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Usar NestedBlockState. Padrão é False (modelos normais). Use --nested para True ou --no-nested para False explicitamente.",
+    )
     args = parser.parse_args()
 
-    all_success = compute_global_analysis(args.seed, args.samples, graph_type=args.graph_type, layered=args.layered)
+    all_success = compute_global_analysis(args.seed, args.samples, graph_type=args.graph_type, layered=args.layered, nested=args.nested)
 
     if all_success:
         print("\n✓ Análises concluídas com sucesso!")
