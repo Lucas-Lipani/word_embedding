@@ -22,7 +22,7 @@ def sbm(
     if layered:
         state_args = {
             "ec": g.ep["layer"],
-            "layers": True,
+            "layers": False,
             "eweight": g.ep["weight"],
             "pclabel": g.vp["tipo"],
         }
