@@ -13,3 +13,7 @@ data_lucas_argentina169.zstd
 /src/word_embedding/__pycache__
 
 /src/word_embedding/token_histogram_analysis.py
+
+# Obsolete analysis scripts (replaced by compute_analysis.py)
+/src/word_embedding/compute_partition_metrics.py
+/src/word_embedding/compute_detailed_run_comparisons.py
