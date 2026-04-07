@@ -42,18 +42,19 @@ def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray) -> dict:
 
 
 def find_all_configs_by_corpus(
-    base_conf_dir: Path, seed: int, n_samples: int, graph_type: str | None = None, layered: bool = False, nested: bool = False
+    base_conf_dir: Path, seed: int, n_samples: int, graph_type: str | None = None, layered: bool = False, nested: bool = False, edge_weighting: str = "uniform"
 ) -> dict:
     """
-    Find ALL configs that share seed + n_samples (+ graph_type + layered + nested).
+    Find ALL configs that share seed + n_samples (+ graph_type + layered + nested + edge_weighting).
     
     IMPORTANT: 
       - layered is always a boolean (default False), NEVER None
       - nested is always a boolean (default False), NEVER None
       - graph_type can be None (=ALL types) or a specific type
+      - edge_weighting filters by edge weighting mode ("uniform" or "inverse_window_size")
     
     Returns:
-      dict {config_idx: {"model": "sbm"|"w2v+kmeans", "windows": [...], "graph_type": str, "layered": bool, "nested": bool, "config_dir": Path}}
+      dict {config_idx: {"model": "sbm"|"w2v+kmeans", "windows": [...], "graph_type": str, "layered": bool, "nested": bool, "edge_weighting": str, "config_dir": Path}}
     """
     configs_found = {}
 
@@ -74,6 +75,7 @@ def find_all_configs_by_corpus(
             cfg_layered = cfg.get("graph", {}).get("sbm_layered", False)
             cfg_sbm_variant = cfg.get("graph", {}).get("sbm_variant", "flat")
             cfg_nested = cfg_sbm_variant == "nested"  # Converter "nested"/"flat" para boolean
+            cfg_edge_weighting = cfg.get("graph", {}).get("edge_weighting", "uniform")
             
             if cfg_seed != seed or cfg_samples != n_samples:
                 continue
@@ -89,6 +91,10 @@ def find_all_configs_by_corpus(
             # STRICT: sempre filtra por nested (nunca None)
             if cfg_nested != nested:
                 continue
+            
+            # STRICT: sempre filtra por edge_weighting
+            if cfg_edge_weighting != edge_weighting:
+                continue
 
             config_idx = int(config_dir.name)
 
@@ -99,14 +105,12 @@ def find_all_configs_by_corpus(
                     "graph_type": cfg_graph_type,
                     "layered": cfg_layered,
                     "nested": cfg_nested,
+                    "edge_weighting": cfg_edge_weighting,
                     "config_dir": config_dir,
                 }
 
             configs_found[config_idx]["windows"].append(str(cfg_window))
 
-            print(
-                f"  [FOUND] Config {config_idx:04d}: model={cfg_model_kind}, graph_type={cfg_graph_type}, layered={cfg_layered}, nested={cfg_nested}, window={cfg_window}"
-            )
 
         except Exception as e:
             print(f"  [WARN] Error reading {config_file}: {e}")
@@ -433,10 +437,11 @@ def compute_global_analysis(
     graph_type: str | None = None,
     layered: bool = False,
     nested: bool = False,
+    edge_weighting: str = "uniform",
 
 ):
     """
-    Global comparisons among ALL configs with same seed + n_samples (+ graph_type + layered).
+    Global comparisons among ALL configs with same seed + n_samples (+ graph_type + layered + nested + edge_weighting).
     Runs: sbm_vs_sbm, sbm_vs_w2v, w2v_vs_w2v.
 
     Optimized behavior:
@@ -455,18 +460,19 @@ def compute_global_analysis(
                If False (default), filter only non-layered configs.
       nested: If True, use NestedBlockState.
               If False (default), use normal SBM.
+      edge_weighting: Edge weighting mode ('uniform' or 'inverse_window_size').
     """
 
     layered_str = "True (LayeredBlockState)" if layered else "False (Normal SBM)"
     nested_str = "True (NestedBlockState)" if nested else "False (Normal SBM)"
     print(f"\n[ANALYSIS] Procurando configs:")
-    print(f"  seed={seed}, samples={n_samples}, graph_type={graph_type if graph_type else 'ALL'}, layered={layered_str}, nested={nested_str}")
+    print(f"  seed={seed}, samples={n_samples}, graph_type={graph_type if graph_type else 'ALL'}, layered={layered_str}, nested={nested_str}, edge_weighting={edge_weighting}")
 
     base_conf_dir = Path(base_conf_dir)
     base_analyses_dir = Path(base_analyses_dir)
     base_analyses_dir.mkdir(parents=True, exist_ok=True)
 
-    configs_found = find_all_configs_by_corpus(base_conf_dir, seed, n_samples, graph_type, layered, nested)
+    configs_found = find_all_configs_by_corpus(base_conf_dir, seed, n_samples, graph_type, layered, nested, edge_weighting)
 
     if not configs_found:
         print("[ERROR] Nenhuma config encontrada", file=sys.stderr)
@@ -513,7 +519,7 @@ def compute_global_analysis(
     all_success = True
 
     for model_x, model_y, comparison_name in comparisons:
-        print(f"\n[COMPARE] {comparison_name}")
+        print(f"\n[COMPARING] {comparison_name}")
 
         valid_configs_x = (
             list(sbm_configs.keys())
@@ -525,10 +531,6 @@ def compute_global_analysis(
             if model_y == "sbm"
             else list(w2v_configs.keys())
         )
-
-        print(f"    Valid configs X ({model_x}): {valid_configs_x}")
-        print(f"    Valid configs Y ({model_y}): {valid_configs_y}")
-
         # Build dataframes per side
         dfs_x = [all_data[c].copy() for c in valid_configs_x if c in all_data]
         dfs_y = [all_data[c].copy() for c in valid_configs_y if c in all_data]
@@ -547,9 +549,6 @@ def compute_global_analysis(
 
         configs_x = sorted(data_x["config"].unique().tolist())
         configs_y = sorted(data_y["config"].unique().tolist())
-
-        print(f"    Configs X ({model_x}): {configs_x}")
-        print(f"    Configs Y ({model_y}): {configs_y}")
 
         # Build fast indices
         idx_x, runs_by_x = build_term_index(data_x)
@@ -594,7 +593,6 @@ def compute_global_analysis(
 
         results_parquet = analysis_dir / "results.parquet"
         df_result.to_parquet(results_parquet, engine="pyarrow")
-        print(f"  [SAVED] results.parquet: {results_parquet}")
 
         # Extrair configuração do grafo do primeiro config disponível
         extracted_graph_type = None
@@ -681,9 +679,15 @@ if __name__ == "__main__":
         default=False,
         help="Usar NestedBlockState. Padrão é False (modelos normais). Use --nested para True ou --no-nested para False explicitamente.",
     )
+    parser.add_argument(
+        "--edge-weighting",
+        choices=["uniform", "inverse_window_size"],
+        default="uniform",
+        help="Modo de peso das arestas: 'uniform' (peso=1) ou 'inverse_window_size' (peso=1/tamanho_janela). Padrão: uniform",
+    )
     args = parser.parse_args()
 
-    all_success = compute_global_analysis(args.seed, args.samples, graph_type=args.graph_type, layered=args.layered, nested=args.nested)
+    all_success = compute_global_analysis(args.seed, args.samples, graph_type=args.graph_type, layered=args.layered, nested=args.nested, edge_weighting=args.edge_weighting)
 
     if all_success:
         print("\n✓ Análises concluídas com sucesso!")

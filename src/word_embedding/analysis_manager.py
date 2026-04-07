@@ -41,8 +41,6 @@ class AnalysisManager:
             sort_keys=True,
         )
 
-        print(f"[DEBUG] Analysis signature: {analysis_sig}")
-
         analysis_dirs = sorted(self.base_analyses_dir.glob("????"))
 
         # Procurar análises existentes com mesma assinatura
@@ -81,7 +79,7 @@ class AnalysisManager:
         analysis_dir = self.base_analyses_dir / f"{next_idx:04d}"
         analysis_dir.mkdir(parents=True, exist_ok=True)
 
-        print(f"[ANALYSIS] ✗ Criando nova análise: {analysis_dir.name}")
+        print(f"[ANALYSIS] Criando nova análise: {analysis_dir.name}")
 
         return analysis_dir, next_idx
 

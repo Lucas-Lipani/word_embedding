@@ -41,13 +41,16 @@ def initialize_graph():
     return g
 
 
-def build_window_graph(g, df, w):
+def build_window_graph(g, df, w, edge_weighting="uniform"):
     """
     Constrói o grafo tripartido Documento – Janela de contexto – Termos num formato
     multiplexo de 2 camadas:
 
       camada 0 : arestas Janela de contexto → Termo central
       camada 1 : arestas Janela de contexto → cada termo de contexto que compõe a janela
+    
+    Args:
+        edge_weighting: Modo de peso das arestas ('uniform' ou 'inverse_window_size')
     """
     g.vp["termos"] = g.new_vertex_property("object")
 
@@ -119,9 +122,13 @@ def build_window_graph(g, df, w):
                 g.vp["amount"][v_term] += 1
 
             # camada 0: Jan → Termo central
-            # Peso = 1 / tamanho_efetivo_da_janela
             window_size = len(win_tokens) + 1  # contexto + termo central
-            weight_value = 1.0 / window_size
+            # Calcular peso baseado em edge_weighting
+            if edge_weighting == "inverse_window_size":
+                weight_value = 1.0 / window_size
+            else:  # "uniform"
+                weight_value = 1.0
+            
             e0 = g.edge(v_win, v_term)
             if e0 is None:
                 e0 = g.add_edge(v_win, v_term)
@@ -158,13 +165,16 @@ def build_window_graph(g, df, w):
     return g
 
 
-def build_window_graph_and_sliding(df, w, save_visualizations=False):
+def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weighting="uniform"):
     """
     Constrói dois grafos simultaneamente a partir do corpus:
     - g_full: grafo DOCUMENTO–JANELA–TERMO (com camadas)
     - g_slide: grafo Janela deslizante (tipo 5) → Termo (tipo 1)
 
     A tokenização é feita apenas uma vez por documento.
+    
+    Args:
+        edge_weighting: Modo de peso das arestas ('uniform' ou 'inverse_window_size')
 
     :param save_visualizations: Se True, salva PDFs dos grafos construídos
     """
@@ -244,15 +254,22 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False):
             e0 = g_full.edge(v_win, v_term)
             if e0 is None:
                 e0 = g_full.add_edge(v_win, v_term)
-                # Peso = 1 / tamanho_efetivo_da_janela
+                # Calcular peso baseado em edge_weighting
                 window_size = len(win_tokens) + 1  # contexto + termo central
-                print("Tamanho da janela efetivo:", window_size)
-                g_full.ep["weight"][e0] = 1.0 / window_size
+                if edge_weighting == "inverse_window_size":
+                    weight_value = 1.0 / window_size
+                else:  # "uniform"
+                    weight_value = 1.0
+                g_full.ep["weight"][e0] = weight_value
                 g_full.ep["layer"][e0] = 0
             else:
-                # Peso = 1 / tamanho_efetivo_da_janela
+                # Calcular peso baseado em edge_weighting
                 window_size = len(win_tokens) + 1  # contexto + termo central
-                g_full.ep["weight"][e0] += 1.0 / window_size
+                if edge_weighting == "inverse_window_size":
+                    weight_value = 1.0 / window_size
+                else:  # "uniform"
+                    weight_value = 1.0
+                g_full.ep["weight"][e0] += weight_value
 
             for tok in win_tokens:
                 if tok not in term_vertex_full:
@@ -272,14 +289,22 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False):
                 e1 = g_full.edge(v_win, v_tok)
                 if e1 is None:
                     e1 = g_full.add_edge(v_win, v_tok)
-                    # Peso = 1 / tamanho_efetivo_da_janela
+                    # Calcular peso baseado em edge_weighting
                     window_size = len(win_tokens) + 1  # contexto + termo central
-                    g_full.ep["weight"][e1] = 1.0 / window_size
+                    if edge_weighting == "inverse_window_size":
+                        weight_value_ctx = 1.0 / window_size
+                    else:  # "uniform"
+                        weight_value_ctx = 1.0
+                    g_full.ep["weight"][e1] = weight_value_ctx
                     g_full.ep["layer"][e1] = 1
                 else:
-                    # Peso = 1 / tamanho_efetivo_da_janela
+                    # Calcular peso baseado em edge_weighting
                     window_size = len(win_tokens) + 1  # contexto + termo central
-                    g_full.ep["weight"][e1] += 1.0 / window_size
+                    if edge_weighting == "inverse_window_size":
+                        weight_value_ctx = 1.0 / window_size
+                    else:  # "uniform"
+                        weight_value_ctx = 1.0
+                    g_full.ep["weight"][e1] += weight_value_ctx
 
         # --------- g_slide: janelas deslizantes por SEQUÊNCIA (ordem preservada), fundidas GLOBALMENTE ---------
         # Se w > número de tokens, usar size completo automaticamente

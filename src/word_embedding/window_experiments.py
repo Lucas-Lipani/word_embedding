@@ -111,12 +111,14 @@ def word_embedding(
     fixed_seed=None,
     nested=False,
     layered=False,
+    edge_weighting="uniform",
 ):
     """
     Retorna também as informações do grafo, blocos e W2V.
     
     Args:
         layered: Se True, usa LayeredBlockState no SBM para grafos com múltiplas camadas.
+        edge_weighting: Modo de peso das arestas ('uniform' ou 'inverse_window_size').
     """
     w2v_models = {
         w: w2vec_kmeans.get_or_train_w2v_model({}, w, df_docs, nlp)
@@ -129,19 +131,19 @@ def word_embedding(
         # Constrói grafos de acordo com graph_type
         if graph_type == "Document-SlideWindow-Term":
             g_full, g_sbm_input = graph_build.build_window_graph_and_sliding(
-                df_docs, sbm_window
+                df_docs, sbm_window, edge_weighting=edge_weighting
             )
         elif graph_type == "Document-Term":
             # TODO: implementar build_doc_term_graph
             g_full = graph_build.extract_doc_term_graph(
                 graph_build.build_window_graph_and_sliding(
-                    df_docs, sbm_window
+                    df_docs, sbm_window, edge_weighting=edge_weighting
                 )[0]
             )
             g_sbm_input = g_full
         elif graph_type == "Document-Context-Window-Term":
             g_full, _ = graph_build.build_window_graph_and_sliding(
-                df_docs, sbm_window
+                df_docs, sbm_window, edge_weighting=edge_weighting
             )
             g_win_term = graph_build.extract_window_term_graph(g_full)
             g_sbm_input = graph_build.extract_context_window_term_graph(
@@ -152,7 +154,7 @@ def word_embedding(
             graph_build_window = _get_graph_build_window(sbm_window, graph_type)
             # print(f"[ADAPT] Document-Window-Term: janela {sbm_window} → {graph_build_window}")
             g_full = graph_build.build_window_graph(
-                graph_build.initialize_graph(), df_docs, graph_build_window
+                graph_build.initialize_graph(), df_docs, graph_build_window, edge_weighting=edge_weighting
             )
             g_sbm_input = graph_build.extract_window_term_graph(g_full)
         else:
@@ -375,6 +377,12 @@ def parse_and_validate_arguments():
         help="Usa LayeredBlockState no SBM para grafos com múltiplas camadas.",
     )
     parser.add_argument(
+        "--edge-weighting",
+        choices=["uniform", "inverse_window_size"],
+        default="uniform",
+        help="Modo de peso das arestas: 'uniform' (peso=1) ou 'inverse_window_size' (peso=1/tamanho_efetivo_da_janela). Padrão: uniform",
+    )
+    parser.add_argument(
         "--windows",
         nargs="+",
         default=[5, 10, 20, 40, "full"],
@@ -420,7 +428,7 @@ def parse_and_validate_arguments():
     WINDOW_LIST = [_parse_win(w) for w in args.windows]
     OUT_CONF = Path("../outputs/conf")
 
-    return n_runs, n_samples, fixed_seed, WINDOW_LIST, args.graph_type, args.n_blocks, args.nested, args.layered, OUT_CONF
+    return n_runs, n_samples, fixed_seed, WINDOW_LIST, args.graph_type, args.n_blocks, args.nested, args.layered, args.edge_weighting, OUT_CONF
 
 
 def prepare_dataframe(n_samples, fixed_seed):
@@ -480,7 +488,7 @@ def prepare_dataframe(n_samples, fixed_seed):
 
 def main():
     # Parse argumentos
-    n_runs, n_samples, fixed_seed, WINDOW_LIST, graph_type, n_blocks, nested, layered, OUT_CONF = (
+    n_runs, n_samples, fixed_seed, WINDOW_LIST, graph_type, n_blocks, nested, layered, edge_weighting, OUT_CONF = (
         parse_and_validate_arguments()
     )
 
@@ -503,6 +511,7 @@ def main():
         print(f"Tipo de Grafo: {graph_type}")
         print(f"Layered SBM: {layered}")
         print(f"Nested SBM: {nested}")
+        print (f"Peso das arestas: {edge_weighting}")
 
         # >>> MODIFICADO: processar cada janela SEPARADAMENTE
         for (
@@ -527,6 +536,7 @@ def main():
             fixed_seed=fixed_seed,
             nested=nested,
             layered=layered,
+            edge_weighting=edge_weighting,
         ):
             partitions_rows = []
             partitions_rows.extend(sbm_rows)
@@ -568,6 +578,7 @@ def main():
                     run_idx=r + 1,
                     partitions_df=partitions_df,
                     window_size=window_size,
+                    edge_weighting=edge_weighting,
                     sbm_entropy=sbm_entropy,
                     vertices_pre_sbm=(
                         dict(vertices_pre_sbm) if vertices_pre_sbm else None

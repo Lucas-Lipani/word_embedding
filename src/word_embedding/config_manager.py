@@ -35,9 +35,10 @@ class ConfigManager:
         layered: bool,
         n_blocks: int | None,
         window_size: int | str,
+        edge_weighting: str = "uniform",
     ) -> str:
         """
-        Assinatura baseada no corpus + window_size + seed + graph_type + nested + layered + n_blocks.
+        Assinatura baseada no corpus + window_size + seed + graph_type + nested + layered + n_blocks + edge_weighting.
         IDÊNTICA PARA AMBOS SBM E W2V!
         """
         return json.dumps(
@@ -52,6 +53,7 @@ class ConfigManager:
                     "sbm_layered": layered,
                     "fixed_n_blocks": n_blocks,
                     "window_size": str(window_size),
+                    "edge_weighting": edge_weighting,
                 },
             },
             sort_keys=True,
@@ -66,16 +68,17 @@ class ConfigManager:
         layered: bool,
         n_blocks: int | None,
         window_size: int | str,
+        edge_weighting: str = "uniform",
     ) -> tuple[Path, Path, int]:
         """
         Encontra/cria 2 configs: uma para SBM e outra para W2V.
 
-        ASSINATURA: seed + samples + graph_type + nested + layered + n_blocks + window_size
+        ASSINATURA: seed + samples + graph_type + nested + layered + n_blocks + window_size + edge_weighting
 
         :return: (config_dir_sbm, config_dir_w2v, corpus_signature_idx)
         """
         corpus_sig = self._get_corpus_signature(
-            n_samples, seed, graph_type, nested, layered, n_blocks, window_size
+            n_samples, seed, graph_type, nested, layered, n_blocks, window_size, edge_weighting
         )
 
         config_dirs = sorted(self.base_conf_dir.glob("????"))
@@ -158,10 +161,11 @@ class ConfigManager:
         layered: bool,
         n_blocks: int | None,
         window_size: int | str,
+        edge_weighting: str = "uniform",
     ) -> Path:
         """
         Salva config.json específico para SBM ou W2V.
-        CONTÉM APENAS: ENTRADA (corpus + modelo específico + window_size).
+        CONTÉM APENAS: ENTRADA (corpus + modelo específico + window_size + edge_weighting).
         """
         config_file = config_dir / "config.json"
 
@@ -181,6 +185,7 @@ class ConfigManager:
                     "sbm_layered": layered,
                     "fixed_n_blocks": n_blocks,
                     "window_size": window_size,
+                    "edge_weighting": edge_weighting,
                 },
                 "model": {
                     "kind": "sbm",
@@ -199,6 +204,7 @@ class ConfigManager:
                     "sbm_layered": layered,
                     "fixed_n_blocks": n_blocks,
                     "window_size": window_size,
+                    "edge_weighting": edge_weighting,
                 },
                 "model": {
                     "kind": "w2v+kmeans",

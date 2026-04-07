@@ -16,6 +16,7 @@ def save_partitions_by_config(
     run_idx: int,
     partitions_df: pd.DataFrame,
     window_size: int | str,
+    edge_weighting: str = "uniform",
     sbm_entropy: float | None = None,
     vertices_pre_sbm: Dict[int, int] = None,
     blocks_post_sbm: Dict[int, int] = None,
@@ -41,6 +42,7 @@ def save_partitions_by_config(
             layered=layered,
             n_blocks=n_blocks,
             window_size=window_size,
+            edge_weighting=edge_weighting,
         )
     )
 
@@ -55,6 +57,7 @@ def save_partitions_by_config(
         layered=layered,
         n_blocks=n_blocks,
         window_size=window_size,
+        edge_weighting=edge_weighting,
     )
 
     # Salvar config.json para W2V
@@ -68,6 +71,7 @@ def save_partitions_by_config(
         layered=layered,
         n_blocks=n_blocks,
         window_size=window_size,
+        edge_weighting=edge_weighting,
     )
 
     # Calcular o próximo run_idx disponível (usa SBM como referência)
