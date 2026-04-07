@@ -589,6 +589,9 @@ def main():
                     term_blocks_count=term_blocks,
                     window_blocks_count=window_blocks,
                     w2v_n_clusters=w2v_n_clusters,
+                    w2v_sg=w2v_sg,
+                    w2v_window=w2v_window,
+                    w2v_vector_size=w2v_vector_size,
                 )
             )
 

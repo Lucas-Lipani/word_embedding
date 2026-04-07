@@ -231,6 +231,9 @@ class ConfigManager:
         partitions_per_type: Dict[int, int] = None,
         w2v_n_clusters: int = None,
         clusters_per_type: Dict[int, int] = None,
+        w2v_sg: int = None,
+        w2v_window: int = None,
+        w2v_vector_size: int = None,
     ) -> Path:
         """
         Salva results.json para um run específico.
@@ -293,6 +296,9 @@ class ConfigManager:
             results_data["w2v"] = {
                 "number_of_clusters": w2v_n_clusters,
                 "clusters_per_type": clusters_per_type_named,
+                "sg_algorithm": "skipgram" if w2v_sg == 1 else "cbow",
+                "context_window_size": w2v_window,
+                "vector_size": w2v_vector_size,
             }
 
         with open(results_file, "w") as f:

@@ -23,6 +23,9 @@ def save_partitions_by_config(
     term_blocks_count: int = None,
     window_blocks_count: int = None,
     w2v_n_clusters: int = None,
+    w2v_sg: int = None,
+    w2v_window: int = None,
+    w2v_vector_size: int = None,
 ):
     """
     Salva partições na nova estrutura: conf/NNNN/run/RRRR/partition.parquet
@@ -126,6 +129,9 @@ def save_partitions_by_config(
         model_kind="w2v",
         w2v_n_clusters=w2v_n_clusters,
         clusters_per_type={1: w2v_n_clusters} if w2v_n_clusters else None,
+        w2v_sg=w2v_sg,
+        w2v_window=w2v_window,
+        w2v_vector_size=w2v_vector_size,
     )
 
     return config_idx, next_run_idx, partition_file_sbm
