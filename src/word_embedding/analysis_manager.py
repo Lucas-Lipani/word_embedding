@@ -93,10 +93,13 @@ class AnalysisManager:
         corpus_seed: int | None = None,
         n_samples: int | None = None,
         graph_type: str | None = None,
+        sbm_variant: str | None = None,
+        sbm_layered: bool = False,
+        window_size: str | None = None,
     ) -> Path:
         """
         Salva config.json da análise.
-        ENTRADA: quais configs foram comparadas e metadados do corpus.
+        ENTRADA: quais configs foram comparadas e metadados do corpus + configuração do grafo.
         """
         config_file = analysis_dir / "config.json"
 
@@ -119,6 +122,9 @@ class AnalysisManager:
             },
             "graph": {
                 "graph_type": graph_type,
+                "sbm_variant": sbm_variant,
+                "sbm_layered": sbm_layered,
+                "window_size": window_size,
             },
         }
 

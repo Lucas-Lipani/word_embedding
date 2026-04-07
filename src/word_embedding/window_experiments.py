@@ -129,19 +129,19 @@ def word_embedding(
         # Constrói grafos de acordo com graph_type
         if graph_type == "Document-SlideWindow-Term":
             g_full, g_sbm_input = graph_build.build_window_graph_and_sliding(
-                df_docs, nlp, sbm_window
+                df_docs, sbm_window
             )
         elif graph_type == "Document-Term":
             # TODO: implementar build_doc_term_graph
             g_full = graph_build.extract_doc_term_graph(
                 graph_build.build_window_graph_and_sliding(
-                    df_docs, nlp, sbm_window
+                    df_docs, sbm_window
                 )[0]
             )
             g_sbm_input = g_full
         elif graph_type == "Document-Context-Window-Term":
             g_full, _ = graph_build.build_window_graph_and_sliding(
-                df_docs, nlp, sbm_window
+                df_docs, sbm_window
             )
             g_win_term = graph_build.extract_window_term_graph(g_full)
             g_sbm_input = graph_build.extract_context_window_term_graph(
@@ -152,7 +152,7 @@ def word_embedding(
             graph_build_window = _get_graph_build_window(sbm_window, graph_type)
             # print(f"[ADAPT] Document-Window-Term: janela {sbm_window} → {graph_build_window}")
             g_full = graph_build.build_window_graph(
-                graph_build.initialize_graph(), df_docs, nlp, graph_build_window
+                graph_build.initialize_graph(), df_docs, graph_build_window
             )
             g_sbm_input = graph_build.extract_window_term_graph(g_full)
         else:

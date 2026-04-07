@@ -21,7 +21,7 @@ def initialize_graph():
     amount_prop = g.vp["amount"] = g.new_vertex_property("int")
     size_prop = g.new_vertex_property("double")
 
-    weight_prop = g.new_edge_property("long")
+    weight_prop = g.new_edge_property("double")
     layer_prop = g.new_edge_property("int")
 
     # >>> NOVO: doc_id disponível para qualquer grafo que precise
@@ -41,7 +41,7 @@ def initialize_graph():
     return g
 
 
-def build_window_graph(g, df, nlp, w):
+def build_window_graph(g, df, w):
     """
     Constrói o grafo tripartido Documento – Janela de contexto – Termos num formato
     multiplexo de 2 camadas:
@@ -119,15 +119,19 @@ def build_window_graph(g, df, nlp, w):
                 g.vp["amount"][v_term] += 1
 
             # camada 0: Jan → Termo central
+            # Peso = 1 / tamanho_efetivo_da_janela
+            window_size = len(win_tokens) + 1  # contexto + termo central
+            weight_value = 1.0 / window_size
             e0 = g.edge(v_win, v_term)
             if e0 is None:
                 e0 = g.add_edge(v_win, v_term)
-                g.ep["weight"][e0] = 1
+                g.ep["weight"][e0] = weight_value
                 g.ep["layer"][e0] = 0
             else:
-                g.ep["weight"][e0] += 1
+                g.ep["weight"][e0] += weight_value
 
             # camada 1: Jan → cada termo de contexto
+            # Peso = 1 / tamanho_efetivo_da_janela
             for tok in win_tokens:
                 if tok not in term_vertex:
                     v_tok = g.add_vertex()
@@ -146,15 +150,15 @@ def build_window_graph(g, df, nlp, w):
                 e1 = g.edge(v_win, v_tok)
                 if e1 is None:
                     e1 = g.add_edge(v_win, v_tok)
-                    g.ep["weight"][e1] = 1
+                    g.ep["weight"][e1] = weight_value
                     g.ep["layer"][e1] = 1
                 else:
-                    g.ep["weight"][e1] += 1
+                    g.ep["weight"][e1] += weight_value
 
     return g
 
 
-def build_window_graph_and_sliding(df, nlp, w, save_visualizations=False):
+def build_window_graph_and_sliding(df, w, save_visualizations=False):
     """
     Constrói dois grafos simultaneamente a partir do corpus:
     - g_full: grafo DOCUMENTO–JANELA–TERMO (com camadas)
@@ -240,10 +244,15 @@ def build_window_graph_and_sliding(df, nlp, w, save_visualizations=False):
             e0 = g_full.edge(v_win, v_term)
             if e0 is None:
                 e0 = g_full.add_edge(v_win, v_term)
-                g_full.ep["weight"][e0] = 1
+                # Peso = 1 / tamanho_efetivo_da_janela
+                window_size = len(win_tokens) + 1  # contexto + termo central
+                print("Tamanho da janela efetivo:", window_size)
+                g_full.ep["weight"][e0] = 1.0 / window_size
                 g_full.ep["layer"][e0] = 0
             else:
-                g_full.ep["weight"][e0] += 1
+                # Peso = 1 / tamanho_efetivo_da_janela
+                window_size = len(win_tokens) + 1  # contexto + termo central
+                g_full.ep["weight"][e0] += 1.0 / window_size
 
             for tok in win_tokens:
                 if tok not in term_vertex_full:
@@ -263,10 +272,14 @@ def build_window_graph_and_sliding(df, nlp, w, save_visualizations=False):
                 e1 = g_full.edge(v_win, v_tok)
                 if e1 is None:
                     e1 = g_full.add_edge(v_win, v_tok)
-                    g_full.ep["weight"][e1] = 1
+                    # Peso = 1 / tamanho_efetivo_da_janela
+                    window_size = len(win_tokens) + 1  # contexto + termo central
+                    g_full.ep["weight"][e1] = 1.0 / window_size
                     g_full.ep["layer"][e1] = 1
                 else:
-                    g_full.ep["weight"][e1] += 1
+                    # Peso = 1 / tamanho_efetivo_da_janela
+                    window_size = len(win_tokens) + 1  # contexto + termo central
+                    g_full.ep["weight"][e1] += 1.0 / window_size
 
         # --------- g_slide: janelas deslizantes por SEQUÊNCIA (ordem preservada), fundidas GLOBALMENTE ---------
         # Se w > número de tokens, usar size completo automaticamente
@@ -494,7 +507,7 @@ def extract_context_window_term_graph(g_jan_term):
         v1, v2 = e.source(), e.target()
         tipo1 = int(g_jan_term.vp["tipo"][v1])
         tipo2 = int(g_jan_term.vp["tipo"][v2])
-        peso = int(g_jan_term.ep["weight"][e])
+        peso = g_jan_term.ep["weight"][e]  # mantém como double, sem conversão para int
 
         # caso layer = 0 → Janela ↔ Termo central → mantém igual
         if layer == 0 and {tipo1, tipo2} == {1, 3}:

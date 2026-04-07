@@ -228,12 +228,29 @@ class ConfigManager:
     ) -> Path:
         """
         Salva results.json para um run específico.
-        CONTÉM APENAS: SAÍDA gerada (partições/clusters por tipo).
+        CONTÉM: SAÍDA gerada (partições/clusters por tipo) + CONFIGURAÇÃO do grafo.
         """
         run_dir = config_dir / "run" / f"{run_idx:04d}"
         run_dir.mkdir(parents=True, exist_ok=True)
 
         results_file = run_dir / "results.json"
+
+        # Ler configurações de config.json
+        config_file = config_dir / "config.json"
+        graph_config = {}
+        if config_file.exists():
+            try:
+                with open(config_file, "r") as f:
+                    cfg_data = json.load(f)
+                graph_info = cfg_data.get("graph", {})
+                graph_config = {
+                    "graph_type": graph_info.get("graph_type", "unknown"),
+                    "sbm_variant": graph_info.get("sbm_variant", "flat"),
+                    "sbm_layered": graph_info.get("sbm_layered", False),
+                    "window_size": str(graph_info.get("window_size", "5")),
+                }
+            except Exception as e:
+                print(f"[WARN] Erro ao ler config.json: {e}")
 
         # Converter tipos numéricos para nomes legíveis
         vertices_pre_sbm_named = {
@@ -254,6 +271,7 @@ class ConfigManager:
         results_data = {
             "timestamp": datetime.now().isoformat(),
             "model": model_kind,
+            "graph_configuration": graph_config,
         }
 
         if model_kind == "sbm":

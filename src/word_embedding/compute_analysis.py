@@ -42,17 +42,18 @@ def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray) -> dict:
 
 
 def find_all_configs_by_corpus(
-    base_conf_dir: Path, seed: int, n_samples: int, graph_type: str | None = None, layered: bool = False
+    base_conf_dir: Path, seed: int, n_samples: int, graph_type: str | None = None, layered: bool = False, nested: bool = False
 ) -> dict:
     """
-    Find ALL configs that share seed + n_samples (+ graph_type + layered).
+    Find ALL configs that share seed + n_samples (+ graph_type + layered + nested).
     
     IMPORTANT: 
       - layered is always a boolean (default False), NEVER None
+      - nested is always a boolean (default False), NEVER None
       - graph_type can be None (=ALL types) or a specific type
     
     Returns:
-      dict {config_idx: {"model": "sbm"|"w2v+kmeans", "windows": [...], "graph_type": str, "layered": bool, "config_dir": Path}}
+      dict {config_idx: {"model": "sbm"|"w2v+kmeans", "windows": [...], "graph_type": str, "layered": bool, "nested": bool, "config_dir": Path}}
     """
     configs_found = {}
 
@@ -71,6 +72,8 @@ def find_all_configs_by_corpus(
             cfg_window = cfg.get("graph", {}).get("window_size")
             cfg_graph_type = cfg.get("graph", {}).get("graph_type")
             cfg_layered = cfg.get("graph", {}).get("sbm_layered", False)
+            cfg_sbm_variant = cfg.get("graph", {}).get("sbm_variant", "flat")
+            cfg_nested = cfg_sbm_variant == "nested"  # Converter "nested"/"flat" para boolean
             
             if cfg_seed != seed or cfg_samples != n_samples:
                 continue
@@ -82,6 +85,10 @@ def find_all_configs_by_corpus(
             # STRICT: sempre filtra por layered (nunca None)
             if cfg_layered != layered:
                 continue
+            
+            # STRICT: sempre filtra por nested (nunca None)
+            if cfg_nested != nested:
+                continue
 
             config_idx = int(config_dir.name)
 
@@ -91,13 +98,14 @@ def find_all_configs_by_corpus(
                     "windows": [],
                     "graph_type": cfg_graph_type,
                     "layered": cfg_layered,
+                    "nested": cfg_nested,
                     "config_dir": config_dir,
                 }
 
             configs_found[config_idx]["windows"].append(str(cfg_window))
 
             print(
-                f"  [FOUND] Config {config_idx:04d}: model={cfg_model_kind}, graph_type={cfg_graph_type}, layered={cfg_layered}, window={cfg_window}"
+                f"  [FOUND] Config {config_idx:04d}: model={cfg_model_kind}, graph_type={cfg_graph_type}, layered={cfg_layered}, nested={cfg_nested}, window={cfg_window}"
             )
 
         except Exception as e:
@@ -458,7 +466,7 @@ def compute_global_analysis(
     base_analyses_dir = Path(base_analyses_dir)
     base_analyses_dir.mkdir(parents=True, exist_ok=True)
 
-    configs_found = find_all_configs_by_corpus(base_conf_dir, seed, n_samples, graph_type, layered)
+    configs_found = find_all_configs_by_corpus(base_conf_dir, seed, n_samples, graph_type, layered, nested)
 
     if not configs_found:
         print("[ERROR] Nenhuma config encontrada", file=sys.stderr)
@@ -588,13 +596,38 @@ def compute_global_analysis(
         df_result.to_parquet(results_parquet, engine="pyarrow")
         print(f"  [SAVED] results.parquet: {results_parquet}")
 
+        # Extrair configuração do grafo do primeiro config disponível
+        extracted_graph_type = None
+        sbm_variant = None
+        sbm_layered = False
+        window_size = None
+        for cfg_idx in all_config_indices:
+            if cfg_idx in configs_found:
+                cfg_dir = configs_found[cfg_idx]["config_dir"]
+                cfg_file = cfg_dir / "config.json"
+                if cfg_file.exists():
+                    try:
+                        with open(cfg_file, "r") as f:
+                            cfg_json = json.load(f)
+                        cfg_graph = cfg_json.get("graph", {})
+                        extracted_graph_type = cfg_graph.get("graph_type")
+                        sbm_variant = cfg_graph.get("sbm_variant", "flat")
+                        sbm_layered = cfg_graph.get("sbm_layered", False)
+                        window_size = str(cfg_graph.get("window_size", "5"))
+                        break
+                    except Exception as e:
+                        print(f"[WARN] Erro ao ler config {cfg_idx}: {e}")
+
         ana_mgr.save_analysis_config(
             analysis_dir,
             all_config_indices,
             comparison_name,
             corpus_seed=seed,
             n_samples=n_samples,
-            graph_type=graph_type,
+            graph_type=extracted_graph_type,
+            sbm_variant=sbm_variant,
+            sbm_layered=sbm_layered,
+            window_size=window_size,
         )
 
         df_summary = df_result.drop(

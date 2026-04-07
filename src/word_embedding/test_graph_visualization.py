@@ -41,7 +41,7 @@ def tokenize_corpus(df, nlp):
     return df
 
 
-def test_document_slidewindow_term(df, nlp, windows):
+def test_document_slidewindow_term(df, windows):
     """Testa o grafo Document-SlideWindow-Term (janelas deslizantes)."""
     print(f"\n{'='*70}")
     print(f"Testando: Document-SlideWindow-Term")
@@ -51,7 +51,7 @@ def test_document_slidewindow_term(df, nlp, windows):
     for window in windows:
         try:
             g_full, g_slide = graph_build.build_window_graph_and_sliding(
-                df, nlp, window, save_visualizations=True
+                df, window, save_visualizations=True
             )
 
             print(f"✓ window={window}")
@@ -73,7 +73,7 @@ def test_document_slidewindow_term(df, nlp, windows):
     return all(results)
 
 
-def test_document_window_term(df, nlp, window_pairs):
+def test_document_window_term(df, window_pairs):
     print(f"\n{'='*70}")
     print(f"Testando: Document-Window-Term")
     print(f"{'='*70}")
@@ -82,7 +82,7 @@ def test_document_window_term(df, nlp, window_pairs):
     for original_window, graph_build_window in window_pairs:
         try:
             g = graph_build.initialize_graph()
-            g = graph_build.build_window_graph(g, df, nlp, graph_build_window)
+            g = graph_build.build_window_graph(g, df, graph_build_window)
             g_win_term = graph_build.extract_window_term_graph(g)
 
             print(f"✓ original window={original_window} | internal={graph_build_window}")
@@ -105,7 +105,7 @@ def test_document_window_term(df, nlp, window_pairs):
 
     return all(results)
 
-def test_document_context_window_term(df, nlp, windows):
+def test_document_context_window_term(df, windows):
     """Testa o grafo Document-Context-Window-Term (tripartido com contexto explícito)."""
     print(f"\n{'='*70}")
     print(f"Testando: Document-Context-Window-Term")
@@ -116,7 +116,7 @@ def test_document_context_window_term(df, nlp, windows):
         try:
             # Primeiro construir o grafo Document-SlideWindow-Term
             g_full, g_slide = graph_build.build_window_graph_and_sliding(
-                df, nlp, window, save_visualizations=False
+                df, window, save_visualizations=False
             )
 
             # Extrair Window-Term
@@ -148,7 +148,7 @@ def test_document_context_window_term(df, nlp, windows):
     return all(results)
 
 
-def test_document_term(df, nlp):
+def test_document_term(df):
     """Testa o grafo Document-Term (bipartido simples, agregado)."""
     print(f"\n{'='*70}")
     print(f"Testando: Document-Term (bipartido agregado)")
@@ -157,7 +157,7 @@ def test_document_term(df, nlp):
     try:
         # Criar grafo Document-SlideWindow-Term primeiro
         g_full, _ = graph_build.build_window_graph_and_sliding(
-            df, nlp, 5, save_visualizations=False
+            df, 5, save_visualizations=False
         )
 
         # Extrair Doc-Term agregado
@@ -207,7 +207,7 @@ def main():
     results = {}
 
     results["Document-SlideWindow-Term"] = test_document_slidewindow_term(
-        df, nlp, windows
+        df, windows
     )
     # Para o Document-Window-Term, precisamos adaptar as janelas para o formato centrado, 
     # porém quero que seja uma tupla  aonde eu consiga resgatar ao fim o valor inicial da janela, ou seja, 
@@ -223,12 +223,12 @@ def main():
         window_pairs.append((window, graph_build_window))
 
     results["Document-Window-Term"] = test_document_window_term(
-        df, nlp, window_pairs
+        df, window_pairs
     )
     results["Document-Context-Window-Term"] = (
-        test_document_context_window_term(df, nlp, windows)
+        test_document_context_window_term(df, windows)
     )
-    results["Document-Term"] = test_document_term(df, nlp)
+    results["Document-Term"] = test_document_term(df)
 
     # Resumo
     print(f"\n{'='*70}")
