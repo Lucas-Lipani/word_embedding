@@ -113,6 +113,7 @@ class ConfigManager:
                             "sbm_layered": graph.get("sbm_layered", False),
                             "fixed_n_blocks": graph.get("fixed_n_blocks"),
                             "window_size": str(graph.get("window_size", "5")),
+                            "edge_weighting": graph.get("edge_weighting", "uniform"),
                         },
                     },
                     sort_keys=True,
