@@ -94,6 +94,7 @@ class AnalysisManager:
         sbm_variant: str | None = None,
         sbm_layered: bool = False,
         window_size: str | None = None,
+        edge_weighting: str | None = None,
     ) -> Path:
         """
         Salva config.json da análise.
@@ -123,6 +124,7 @@ class AnalysisManager:
                 "sbm_variant": sbm_variant,
                 "sbm_layered": sbm_layered,
                 "window_size": window_size,
+                "edge_weighting": edge_weighting,
             },
         }
 

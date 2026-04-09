@@ -599,6 +599,7 @@ def compute_global_analysis(
         sbm_variant = None
         sbm_layered = False
         window_size = None
+        extracted_edge_weighting = None
         for cfg_idx in all_config_indices:
             if cfg_idx in configs_found:
                 cfg_dir = configs_found[cfg_idx]["config_dir"]
@@ -612,6 +613,7 @@ def compute_global_analysis(
                         sbm_variant = cfg_graph.get("sbm_variant", "flat")
                         sbm_layered = cfg_graph.get("sbm_layered", False)
                         window_size = str(cfg_graph.get("window_size", "5"))
+                        extracted_edge_weighting = cfg_graph.get("edge_weighting", "uniform")
                         break
                     except Exception as e:
                         print(f"[WARN] Erro ao ler config {cfg_idx}: {e}")
@@ -626,6 +628,7 @@ def compute_global_analysis(
             sbm_variant=sbm_variant,
             sbm_layered=sbm_layered,
             window_size=window_size,
+            edge_weighting=extracted_edge_weighting,
         )
 
         df_summary = df_result.drop(
