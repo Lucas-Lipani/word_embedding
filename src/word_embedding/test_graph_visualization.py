@@ -16,7 +16,7 @@ def create_mini_corpus():
     return pd.DataFrame(
         {
             "abstract": [
-                "Machine learning allows machine learning systems to learn from data, identify patterns in data, and make autonomous decisions based on learned patterns.",
+                "Machine learning allows machine learning systems to learn from data, identify patterns in data in the machine.",
                 # "Deep learning uses neural networks to process information.",
                 # "Natural language processing helps computers understand text.",
             ]
@@ -50,16 +50,25 @@ def test_document_slidewindow_term(df, windows):
     results = []
     for window in windows:
         try:
+            # Adaptar janela para ter contexto equivalente (apenas para g_slide!)
+            graph_build_window_slide = window_experiments._get_graph_build_window(
+                window, "Document-SlideWindow-Term"
+            )
+            
+            if window != "full":
+                print(f"  [BUILD] window={window}: g_full com w={window} (contexto bilateral até {2*int(window)+1}), g_slide com w_slide={graph_build_window_slide} (sliding de {graph_build_window_slide})")
+            
+            # Chamar com w (original) e w_slide (adaptado)
             g_full, g_slide = graph_build.build_window_graph_and_sliding(
-                df, window, save_visualizations=True
+                df, window, save_visualizations=True, w_slide=graph_build_window_slide
             )
 
             print(f"✓ window={window}")
             print(
-                f"  g_full: {g_full.num_vertices()} vértices, {g_full.num_edges()} arestas"
+                f"  g_full: {g_full.num_vertices()} vértices, {g_full.num_edges()} arestas (contexto bilateral)"
             )
             print(
-                f"  g_slide: {g_slide.num_vertices()} vértices, {g_slide.num_edges()} arestas"
+                f"  g_slide: {g_slide.num_vertices()} vértices, {g_slide.num_edges()} arestas (sliding adaptado)"
             )
 
             results.append(True)
@@ -85,16 +94,21 @@ def test_document_window_term(df, window_pairs):
             g = graph_build.build_window_graph(g, df, graph_build_window)
             g_win_term = graph_build.extract_window_term_graph(g)
 
+            if original_window != "full":
+                context_size = 2 * int(original_window) + 1
+                filename_full = f"03_Document-Window-Term_window{original_window}_context{context_size}tokens"
+                filename_subgraph = f"04_Window-Term_window{original_window}_context{context_size}tokens"
+            else:
+                filename_full = "03_Document-Window-Term_windowFull"
+                filename_subgraph = "04_Window-Term_windowFull"
+            
             print(f"✓ original window={original_window} | internal={graph_build_window}")
+            print(f"  Contexto: {2*int(original_window)+1 if original_window != 'full' else 'full'} tokens")
             print(f"  g_full: {g.num_vertices()} vértices, {g.num_edges()} arestas")
             print(f"  g_win_term: {g_win_term.num_vertices()} vértices, {g_win_term.num_edges()} arestas")
 
-            graph_build.save_graph_visualization(
-                g, f"03_Document-Window-Term_window{original_window}"
-            )
-            graph_build.save_graph_visualization(
-                g_win_term, f"04_Window-Term_window{original_window}"
-            )
+            graph_build.save_graph_visualization(g, filename_full)
+            graph_build.save_graph_visualization(g_win_term, filename_subgraph)
 
             results.append(True)
         except Exception as e:
@@ -114,9 +128,14 @@ def test_document_context_window_term(df, windows):
     results = []
     for window in windows:
         try:
+            # Adaptar janela para ter contexto equivalente
+            graph_build_window_slide = window_experiments._get_graph_build_window(
+                window, "Document-Context-Window-Term"
+            )
+            
             # Primeiro construir o grafo Document-SlideWindow-Term
             g_full, g_slide = graph_build.build_window_graph_and_sliding(
-                df, window, save_visualizations=False
+                df, window, save_visualizations=False, w_slide=graph_build_window_slide
             )
 
             # Extrair Window-Term
@@ -127,15 +146,20 @@ def test_document_context_window_term(df, windows):
                 g_win_term
             )
 
+            if window != "full":
+                context_size = 2 * int(window) + 1
+                filename = f"05_Document-Context-Window-Term_window{window}_context{context_size}tokens"
+            else:
+                filename = "05_Document-Context-Window-Term_windowFull"
+            
             print(f"✓ window={window}")
+            print(f"  Contexto: {context_size if window != 'full' else 'full'} tokens")
             print(
                 f"  g_context: {g_context.num_vertices()} vértices, {g_context.num_edges()} arestas"
             )
 
             # Salvar visualização
-            graph_build.save_graph_visualization(
-                g_context, f"05_Document-Context-Window-Term_window{window}"
-            )
+            graph_build.save_graph_visualization(g_context, filename)
 
             results.append(True)
         except Exception as e:
@@ -155,9 +179,14 @@ def test_document_term(df):
     print(f"{'='*70}")
 
     try:
+        # Adaptar janela para ter contexto equivalente
+        graph_build_window = window_experiments._get_graph_build_window(
+            5, "Document-Term"
+        )
+        
         # Criar grafo Document-SlideWindow-Term primeiro
         g_full, _ = graph_build.build_window_graph_and_sliding(
-            df, 5, save_visualizations=False
+            df, graph_build_window, save_visualizations=False
         )
 
         # Extrair Doc-Term agregado
@@ -203,7 +232,7 @@ def main():
     print(f"  Tokens por doc: {[len(t) for t in df['tokens']]}")
 
     # Testar todos os tipos com múltiplas janelas
-    windows = [3, 5, 20,"full"]
+    windows = [1, 2, 3, "full"]
     results = {}
 
     results["Document-SlideWindow-Term"] = test_document_slidewindow_term(
@@ -240,12 +269,13 @@ def main():
         print(f"{graph_type:<40} {status}")
 
     print(f"\n📁 PDFs salvos em: ../outputs/graphs/")
-    print(f"   - 01_Document-Window-Term_windowX.pdf (g_full)")
-    print(f"   - 02_Document-SlideWindow-Term_windowX.pdf (g_slide)")
-    print(f"   - 03_Document-Window-Term_windowX.pdf (grafo centrado)")
-    print(f"   - 04_Window-Term_windowX.pdf (subgrafo)")
-    print(f"   - 05_Document-Context-Window-Term_windowX.pdf (tripartido)")
-    print(f"   - 06_Document-Term_aggregated.pdf (bipartido)")
+    print(f"   - 01_Document-Window-Term_windowX_contextYtokens.pdf (g_full - contexto bilateral)")
+    print(f"   - 02_Document-SlideWindow-Term_windowYtokens.pdf (g_slide - sliding adaptado)")
+    print(f"   - 03_Document-Window-Term_windowX_contextYtokens.pdf (grafo centrado)")
+    print(f"   - 04_Window-Term_windowX_contextYtokens.pdf (subgrafo window-term)")
+    print(f"   - 05_Document-Context-Window-Term_windowX_contextYtokens.pdf (tripartido com contexto)")
+    print(f"   - 06_Document-Term_aggregated.pdf (bipartido agregado)")
+    print(f"   Legenda: X = tamanho original da janela, Y = quantidade de tokens no contexto")
 
     all_passed = all(results.values())
     print(

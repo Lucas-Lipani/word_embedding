@@ -94,11 +94,26 @@ def _get_graph_build_window(window_size: int | str, graph_type: str) -> int | st
 
     The original window_size must remain unchanged for the rest of the pipeline.
 
-    Only Document-Window-Term needs an internal adaptation because it uses
-    centered context on both sides of the target term.
+    PARIDADE: Todos os graph_types usam o mesmo tamanho de janela de CONTEXTO!
+    
+    - Document-Window-Term: window=5 → 5 esq + 1 central + 5 dir = até 11 termos
+    - Document-SlideWindow-Term: window=5 → adapted to 11 (sliding de 11 termos)
+    - W2V gensim: window=5 → 5 esq + 1 central + 5 dir = até 11 termos
+    
+    Adaptações:
+    1. Document-SlideWindow-Term precisa aumentar window para ter contexto equivalente
+       Fórmula: adapted_window = 2 * window + 1
+       Exemplo: window=5 → 11 (sliding de 11 termos ≈ bilateral até 11)
+    
+    2. Document-Window-Term usa window direto (sem adaptação)
     """
-    if graph_type == "Document-Window-Term" and window_size != "full":
-        return max(1, int(window_size) // 2)
+    if graph_type == "Document-SlideWindow-Term" and window_size != "full":
+        # Aumentar window para ter contexto equivalente ao bilateral
+        window_int = int(window_size)
+        adapted = 2 * window_int + 1
+        return adapted
+    
+    # Document-Window-Term, Document-Term, Document-Context-Window-Term: sem adaptação
     return window_size
 
 
@@ -130,11 +145,21 @@ def word_embedding(
 
         # Constrói grafos de acordo com graph_type
         if graph_type == "Document-SlideWindow-Term":
+            # Para Document-SlideWindow-Term:
+            # - g_full recebe window original (w) → contexto bilateral até 2w+1
+            # - g_slide recebe window adaptado (2w+1) → sliding de 2w+1 termos
+            
+            graph_build_window_slide = _get_graph_build_window(sbm_window, graph_type)
+            if sbm_window != "full":
+                print(f"[WINDOW] Document-SlideWindow-Term: window={sbm_window}")
+                print(f"         g_full: contexto bilateral até {2*int(sbm_window)+1} termos (w={sbm_window})")
+                print(f"         g_slide: sliding de {graph_build_window_slide} termos (w_slide={graph_build_window_slide}) ← ADAPTADO")
+            
             g_full, g_sbm_input = graph_build.build_window_graph_and_sliding(
-                df_docs, sbm_window, edge_weighting=edge_weighting
+                df_docs, sbm_window, edge_weighting=edge_weighting, w_slide=graph_build_window_slide
             )
         elif graph_type == "Document-Term":
-            # TODO: implementar build_doc_term_graph
+            # Document-Term usa g_full, então sem adaptação
             g_full = graph_build.extract_doc_term_graph(
                 graph_build.build_window_graph_and_sliding(
                     df_docs, sbm_window, edge_weighting=edge_weighting
@@ -142,6 +167,7 @@ def word_embedding(
             )
             g_sbm_input = g_full
         elif graph_type == "Document-Context-Window-Term":
+            # Document-Context-Window-Term usa g_full, então sem adaptação
             g_full, _ = graph_build.build_window_graph_and_sliding(
                 df_docs, sbm_window, edge_weighting=edge_weighting
             )
@@ -150,9 +176,8 @@ def word_embedding(
                 g_win_term
             )
         elif graph_type == "Document-Window-Term":
-            # Adaptar tamanho de janela para compensar contexto bilateral
+            # Usar mesmo tamanho de janela (sem adaptação - já bilateral)
             graph_build_window = _get_graph_build_window(sbm_window, graph_type)
-            # print(f"[ADAPT] Document-Window-Term: janela {sbm_window} → {graph_build_window}")
             g_full = graph_build.build_window_graph(
                 graph_build.initialize_graph(), df_docs, graph_build_window, edge_weighting=edge_weighting
             )

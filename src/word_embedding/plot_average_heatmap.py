@@ -23,6 +23,22 @@ def _window_sort_key(w):
         return (1, str(w))
 
 
+def _get_context_label(window_val):
+    """
+    Converte valor de janela para rótulo mostrando apenas tokens de contexto real.
+    
+    Fórmula: window=W → contexto = 2*W + 1 tokens
+    Exemplo: window=5 → "11t"
+    """
+    try:
+        w = int(window_val)
+        context_tokens = 2 * w + 1
+        return f"{context_tokens}t"
+    except (ValueError, TypeError):
+        # Se não for número (ex: "full"), mostra "full"
+        return str(window_val)
+
+
 def plot_average_heatmaps(analysis_dir: Path):
     """
     Plota heatmaps para todas as métricas do arquivo results.parquet.
@@ -142,6 +158,14 @@ def plot_average_heatmaps(analysis_dir: Path):
             rows_sorted = sorted(pivot.index.unique(), key=_window_sort_key)
             cols_sorted = sorted(pivot.columns.unique(), key=_window_sort_key)
             pivot = pivot.loc[rows_sorted, cols_sorted]
+            
+            # Converter rótulos das janelas para mostrar tokens de contexto
+            row_labels = [_get_context_label(w) for w in rows_sorted]
+            col_labels = [_get_context_label(w) for w in cols_sorted]
+            
+            # Renomear índices
+            pivot.index = row_labels
+            pivot.columns = col_labels
 
             # Definir escala apropriada
             if metric in {
@@ -185,9 +209,18 @@ def plot_average_heatmaps(analysis_dir: Path):
                                           fill=False, edgecolor='red', 
                                           lw=2.5, zorder=10))
 
+            # Adicionar número da análise no canto superior direito
+            analysis_num = analysis_dir.name
+            ax.text(0.98, 0.98, f"Analysis: {analysis_num}", 
+                   transform=ax.transAxes,
+                   fontsize=10, fontweight='bold',
+                   verticalalignment='top', horizontalalignment='right',
+                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8),
+                   zorder=15)
+
             plt.title(f"{metric.upper()}: {title_suffix}")
-            plt.xlabel(model_y_label)
-            plt.ylabel(model_x_label)
+            plt.xlabel(f"{model_y_label} (tokens no contexto)")
+            plt.ylabel(f"{model_x_label} (tokens no contexto)")
             plt.tight_layout()
 
             # Salvar

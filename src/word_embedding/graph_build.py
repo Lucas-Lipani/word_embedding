@@ -21,7 +21,7 @@ def initialize_graph():
     amount_prop = g.vp["amount"] = g.new_vertex_property("int")
     size_prop = g.new_vertex_property("double")
 
-    weight_prop = g.new_edge_property("double")
+    weight_prop = g.new_edge_property("double",val = 0.0)
     layer_prop = g.new_edge_property("int")
 
     # >>> NOVO: doc_id disponível para qualquer grafo que precise
@@ -44,17 +44,22 @@ def initialize_graph():
 def build_window_graph(g, df, w, edge_weighting="uniform"):
     """
     Constrói o grafo tripartido Documento – Janela de contexto – Termos num formato
-    multiplexo de 2 camadas:
+    multiplexo de 2 camadas.
+    
+    Semântica do Contexto (Versão 1 - Simples):
+      O contexto é definido APENAS pelas palavras que ele contém.
+      Múltiplos termos-pivô que compartilham os mesmos tokens reutilizam
+      o mesmo vértice de janela.
 
       camada 0 : arestas Janela de contexto → Termo central
       camada 1 : arestas Janela de contexto → cada termo de contexto que compõe a janela
     
     Args:
         edge_weighting: Modo de peso das arestas ('uniform' ou 'inverse_window_size')
-    """
+    """   
     g.vp["termos"] = g.new_vertex_property("object")
 
-    window_vertex = {}  # chave (frozenset(win_tokens), term_central) → v_jan
+    window_vertex = {}  # chave frozenset(win_tokens) → v_jan (sem discriminação por pivô)
     term_vertex = {}  # termo → v_term
     doc_vertex = {}  # doc_id → v_doc
     doc_y = term_y = win_y = 0  # coordenadas para layout
@@ -84,9 +89,11 @@ def build_window_graph(g, df, w, edge_weighting="uniform"):
 
         # ───── janelas centradas em cada token ─────
         for i, term_central in enumerate(toks):
+            # W2V-like: pega w termos à esquerda + termo central + w termos à direita
             start, end = max(0, i - w_local), min(len(toks), i + w_local + 1)
-            win_tokens = toks[start:i] + toks[i + 1: end]  # contexto
-            win_key = (frozenset(win_tokens), term_central)  # deduplicação
+            win_tokens = toks[start:end]  # inclui termo central
+            # VERSÃO 1 (simples): deduplicação apenas por tokens (sem discriminação por pivô)
+            win_key = frozenset(win_tokens)
 
             # --- vértice Janela ---
             if win_key not in window_vertex:
@@ -122,7 +129,7 @@ def build_window_graph(g, df, w, edge_weighting="uniform"):
                 g.vp["amount"][v_term] += 1
 
             # camada 0: Jan → Termo central
-            window_size = len(win_tokens) + 1  # contexto + termo central
+            window_size = len(win_tokens)  # tamanho da janela completa (já inclui central)
             # Calcular peso baseado em edge_weighting
             if edge_weighting == "inverse_window_size":
                 weight_value = 1.0 / window_size
@@ -165,19 +172,29 @@ def build_window_graph(g, df, w, edge_weighting="uniform"):
     return g
 
 
-def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weighting="uniform"):
+def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weighting="uniform", w_slide=None):
     """
     Constrói dois grafos simultaneamente a partir do corpus:
     - g_full: grafo DOCUMENTO–JANELA–TERMO (com camadas)
+             Semântica: O contexto é definido apenas pelas palavras que ele contém
+             (Versão 1 - Simples). Múltiplos termos-pivô que compartilham os mesmos 
+             tokens reutilizam o mesmo vértice de janela.
     - g_slide: grafo Janela deslizante (tipo 5) → Termo (tipo 1)
 
     A tokenização é feita apenas uma vez por documento.
     
     Args:
+        w: Tamanho da janela para g_full (contexto bilateral)
+        w_slide: Tamanho da janela para g_slide (janela deslizante). 
+                 Se None, usa w (mesmo tamanho para ambos)
         edge_weighting: Modo de peso das arestas ('uniform' ou 'inverse_window_size')
 
     :param save_visualizations: Se True, salva PDFs dos grafos construídos
     """
+    # Se w_slide=None, usar w para ambos (compatibilidade)
+    if w_slide is None:
+        w_slide = w
+     
     g_full = initialize_graph()
     g_slide = initialize_graph()
     g_full.vp["termos"] = g_full.new_vertex_property("object")
@@ -204,7 +221,7 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weight
             w_requested = int(w)
             w_local = min(w_requested, len(tokens))
             if w_local < w_requested:
-                print(f"  ⚠ Doc {doc_id}: janela {w_requested} > {len(tokens)} tokens → usando full")
+                print(f"  Doc {doc_id}: janela {w_requested} > {len(tokens)} tokens → usando full")
 
         # ───── Documento no g_full ─────
         v_doc = g_full.add_vertex()
@@ -217,9 +234,11 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weight
 
         for i, term_central in enumerate(tokens):
             # --------- g_full: JANELA (tipo 3) → termo central/contexto ---------
+            # W2V-like: pega w termos à esquerda + termo central + w termos à direita
             start, end = max(0, i - w_local), min(len(tokens), i + w_local + 1)
-            win_tokens = tokens[start:i] + tokens[i + 1 : end]
-            win_key = (frozenset(win_tokens), term_central)
+            win_tokens = tokens[start:end]  # inclui termo central
+            # VERSÃO 1 (simples): deduplicação apenas por tokens (sem discriminação por pivô)
+            win_key = frozenset(win_tokens)
 
             if win_key not in window_vertex_full:
                 v_win = g_full.add_vertex()
@@ -255,7 +274,7 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weight
             if e0 is None:
                 e0 = g_full.add_edge(v_win, v_term)
                 # Calcular peso baseado em edge_weighting
-                window_size = len(win_tokens) + 1  # contexto + termo central
+                window_size = len(win_tokens)  # tamanho da janela completa
                 if edge_weighting == "inverse_window_size":
                     weight_value = 1.0 / window_size
                 else:  # "uniform"
@@ -264,7 +283,7 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weight
                 g_full.ep["layer"][e0] = 0
             else:
                 # Calcular peso baseado em edge_weighting
-                window_size = len(win_tokens) + 1  # contexto + termo central
+                window_size = len(win_tokens)  # tamanho da janela completa
                 if edge_weighting == "inverse_window_size":
                     weight_value = 1.0 / window_size
                 else:  # "uniform"
@@ -290,7 +309,7 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weight
                 if e1 is None:
                     e1 = g_full.add_edge(v_win, v_tok)
                     # Calcular peso baseado em edge_weighting
-                    window_size = len(win_tokens) + 1  # contexto + termo central
+                    window_size = len(win_tokens)  # tamanho da janela completa
                     if edge_weighting == "inverse_window_size":
                         weight_value_ctx = 1.0 / window_size
                     else:  # "uniform"
@@ -299,7 +318,7 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weight
                     g_full.ep["layer"][e1] = 1
                 else:
                     # Calcular peso baseado em edge_weighting
-                    window_size = len(win_tokens) + 1  # contexto + termo central
+                    window_size = len(win_tokens)  # tamanho da janela completa
                     if edge_weighting == "inverse_window_size":
                         weight_value_ctx = 1.0 / window_size
                     else:  # "uniform"
@@ -307,12 +326,12 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weight
                     g_full.ep["weight"][e1] += weight_value_ctx
 
         # --------- g_slide: janelas deslizantes por SEQUÊNCIA (ordem preservada), fundidas GLOBALMENTE ---------
-        # Se w > número de tokens, usar size completo automaticamente
-        if w == "full":
-            w_local = len(tokens)
+        # Se w_slide > número de tokens, usar size completo automaticamente
+        if w_slide == "full":
+            w_local_slide = len(tokens)
         else:
-            w_requested = int(w)
-            w_local = min(w_requested, len(tokens))
+            w_requested_slide = int(w_slide)
+            w_local_slide = min(w_requested_slide, len(tokens))
 
         # garanta as props (faça isso uma única vez; aqui já funciona porque é antes de criar os vértices da janela)
         if "occurs_total" not in g_slide.vp:
@@ -327,8 +346,8 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weight
             )  # dict {doc_id: cont}
 
         # desliza com passo 1 e tamanho fixo
-        for start in range(0, len(tokens) - w_local + 1):
-            end = start + w_local
+        for start in range(0, len(tokens) - w_local_slide + 1):
+            end = start + w_local_slide
             seq = tuple(tokens[start:end])  # ordem preservada
             seq_key = seq
 
@@ -386,12 +405,23 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weight
                     ] += c  # janela repetiu (outro start/mesmo doc ou outro doc)
 
     if save_visualizations:
-        save_graph_visualization(g_full, f"01_Document-Window-Term_window{w}")
+        # Para g_full: contexto bilateral
+        if w != "full":
+            context_size = 2 * int(w) + 1
+            save_graph_visualization(g_full, f"01_Document-Window-Term_window{w}_context{context_size}tokens")
+        else:
+            save_graph_visualization(g_full, f"01_Document-Window-Term_windowFull")
+        
         # Só salvar g_slide se tem vértices (evita erro ao desenhar grafo vazio)
         if g_slide.num_vertices() > 0:
-            save_graph_visualization(
-                g_slide, f"02_Document-SlideWindow-Term_window{w}"
-            )
+            if w_slide != "full":
+                save_graph_visualization(
+                    g_slide, f"02_Document-SlideWindow-Term_window{w_slide}tokens"
+                )
+            else:
+                save_graph_visualization(
+                    g_slide, f"02_Document-SlideWindow-Term_windowFull"
+                )
         else:
             print(f"  [SKIP] Grafo g_slide vazio para window={w}")
 
