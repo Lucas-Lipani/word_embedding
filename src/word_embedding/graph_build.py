@@ -2,6 +2,7 @@ from graph_tool.all import Graph
 from tqdm import tqdm
 from collections import Counter
 from pathlib import Path
+import math
 
 
 def initialize_graph():
@@ -55,9 +56,31 @@ def build_window_graph(g, df, w, edge_weighting="uniform"):
       camada 1 : arestas Janela de contexto → cada termo de contexto que compõe a janela
     
     Args:
-        edge_weighting: Modo de peso das arestas ('uniform' ou 'inverse_window_size')
+        edge_weighting: Modo de peso das arestas ('uniform' ou 'inverse_window_size').
+                        Se 'inverse_window_size', calcula peso = ceil(window_size / min_window_size)
+                        garantindo que a menor janela tenha peso 1 e maiores janelas tenham pesos >= 1
     """   
     g.vp["termos"] = g.new_vertex_property("object")
+
+    # Calcular tamanho mínimo da janela (para inverse_window_size)
+    min_window_size = 1
+    if edge_weighting == "inverse_window_size":
+        # Encontrar o tamanho mínimo de janela que aparecerá durante a construção
+        # (para cada doc, a janela mínima é 1 token na pior das hipóteses)
+        # Na prática, usamos min(2, tamanho_do_doc) como aproximação
+        window_sizes_observed = []
+        for _, row in df.iterrows():
+            tokens = row["tokens"]
+            if w == "full":
+                w_local = len(tokens)
+            else:
+                w_requested = int(w)
+                w_local = min(w_requested, len(tokens))
+            window_sizes_observed.append(w_local)
+        
+        min_window_size = min(window_sizes_observed) if window_sizes_observed else 1
+        if min_window_size <= 0:
+            min_window_size = 1
 
     window_vertex = {}  # chave frozenset(win_tokens) → v_jan (sem discriminação por pivô)
     term_vertex = {}  # termo → v_term
@@ -132,7 +155,10 @@ def build_window_graph(g, df, w, edge_weighting="uniform"):
             window_size = len(win_tokens)  # tamanho da janela completa (já inclui central)
             # Calcular peso baseado em edge_weighting
             if edge_weighting == "inverse_window_size":
-                weight_value = 1.0 / window_size
+                # peso = window_size / min_window_size (float) para capturar proporção exata
+                weight_value = window_size / min_window_size
+                #impressao do weight_value para debug
+                # print(f"  Doc {doc_id}, window_size={window_size} → weight={weight_value}")
             else:  # "uniform"
                 weight_value = 1.0
             
@@ -187,13 +213,31 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weight
         w: Tamanho da janela para g_full (contexto bilateral)
         w_slide: Tamanho da janela para g_slide (janela deslizante). 
                  Se None, usa w (mesmo tamanho para ambos)
-        edge_weighting: Modo de peso das arestas ('uniform' ou 'inverse_window_size')
+        edge_weighting: Modo de peso das arestas ('uniform' ou 'inverse_window_size').
+                        Se 'inverse_window_size', calcula peso = ceil(window_size / min_window_size)
 
     :param save_visualizations: Se True, salva PDFs dos grafos construídos
     """
     # Se w_slide=None, usar w para ambos (compatibilidade)
     if w_slide is None:
         w_slide = w
+    
+    # Calcular tamanho mínimo da janela (para inverse_window_size)
+    min_window_size = 1
+    if edge_weighting == "inverse_window_size":
+        window_sizes_observed = []
+        for _, row in df.iterrows():
+            tokens = row["tokens"]
+            if w == "full":
+                w_local = len(tokens)
+            else:
+                w_requested = int(w)
+                w_local = min(w_requested, len(tokens))
+            window_sizes_observed.append(w_local)
+        
+        min_window_size = min(window_sizes_observed) if window_sizes_observed else 1
+        if min_window_size <= 0:
+            min_window_size = 1
      
     g_full = initialize_graph()
     g_slide = initialize_graph()
@@ -276,7 +320,8 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weight
                 # Calcular peso baseado em edge_weighting
                 window_size = len(win_tokens)  # tamanho da janela completa
                 if edge_weighting == "inverse_window_size":
-                    weight_value = 1.0 / window_size
+                    # peso = window_size / min_window_size (float) para capturar proporção exata
+                    weight_value = window_size / min_window_size
                 else:  # "uniform"
                     weight_value = 1.0
                 g_full.ep["weight"][e0] = weight_value
@@ -285,7 +330,8 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weight
                 # Calcular peso baseado em edge_weighting
                 window_size = len(win_tokens)  # tamanho da janela completa
                 if edge_weighting == "inverse_window_size":
-                    weight_value = 1.0 / window_size
+                    # peso = window_size / min_window_size (float) para capturar proporção exata
+                    weight_value = window_size / min_window_size
                 else:  # "uniform"
                     weight_value = 1.0
                 g_full.ep["weight"][e0] += weight_value
@@ -311,7 +357,8 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weight
                     # Calcular peso baseado em edge_weighting
                     window_size = len(win_tokens)  # tamanho da janela completa
                     if edge_weighting == "inverse_window_size":
-                        weight_value_ctx = 1.0 / window_size
+                        # peso = window_size / min_window_size (float) para capturar proporção exata
+                        weight_value_ctx = window_size / min_window_size
                     else:  # "uniform"
                         weight_value_ctx = 1.0
                     g_full.ep["weight"][e1] = weight_value_ctx
@@ -320,7 +367,8 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weight
                     # Calcular peso baseado em edge_weighting
                     window_size = len(win_tokens)  # tamanho da janela completa
                     if edge_weighting == "inverse_window_size":
-                        weight_value_ctx = 1.0 / window_size
+                        # peso = window_size / min_window_size (float) para capturar proporção exata
+                        weight_value_ctx = window_size / min_window_size
                     else:  # "uniform"
                         weight_value_ctx = 1.0
                     g_full.ep["weight"][e1] += weight_value_ctx
@@ -381,6 +429,14 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weight
 
             # acumula pesos das arestas janela→termo
             freq = Counter(seq)
+            
+            # Calcular peso de base para g_slide com edge_weighting
+            window_size = len(seq)
+            if edge_weighting == "inverse_window_size":
+                base_weight = window_size / min_window_size
+            else:
+                base_weight = 1.0
+            
             for tok, c in freq.items():
                 v_tok = term_vertex_slide.get(tok)
                 if v_tok is None:
@@ -393,16 +449,16 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weight
                     term_vertex_slide[tok] = v_tok
                     slide_term_y += 1
                 e = g_slide.edge(v_slide, v_tok)
+                
+                # Peso = frequência * base_weight
+                weight_g_slide = c * base_weight
+                
                 if e is None:
                     e = g_slide.add_edge(v_slide, v_tok)
                     g_slide.ep["layer"][e] = 0
-                    g_slide.ep["weight"][
-                        e
-                    ] = c  # primeira vez dessa janela global
+                    g_slide.ep["weight"][e] = weight_g_slide
                 else:
-                    g_slide.ep["weight"][
-                        e
-                    ] += c  # janela repetiu (outro start/mesmo doc ou outro doc)
+                    g_slide.ep["weight"][e] += weight_g_slide
 
     if save_visualizations:
         # Para g_full: contexto bilateral
