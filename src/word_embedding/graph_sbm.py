@@ -1,6 +1,8 @@
 from graph_tool.all import (
     minimize_blockmodel_dl,
     minimize_nested_blockmodel_dl,
+    UncertainBlockState,
+    UncertainBaseState,
     LayeredBlockState,
     BlockState,
 )
@@ -71,9 +73,25 @@ def sbm(
                 state_args=state_args,
                 multilevel_mcmc_args=mcmc_args,
             )
+    
+    # state2 = minimize_blockmodel_dl(
+    #     g,
+    #     state=UncertainBlockState(g, **state_args),
+    #     state_args={
+    #         "eweight": g.ep["weight"],
+    #         "pclabel": g.vp["tipo"],
+    #     },
+    # )
+
+    # print("=== state2 ===") 
+    # # print(dir(state2))
+    # print(state2)
+
 
     print("=== sbm ===")
     print(state)
+
+    # exit(0)
     return state
 
 

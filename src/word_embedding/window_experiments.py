@@ -150,14 +150,11 @@ def word_embedding(
             # - g_slide recebe window adaptado (2w+1) → sliding de 2w+1 termos
             
             graph_build_window_slide = _get_graph_build_window(sbm_window, graph_type)
-            if sbm_window != "full":
-                print(f"[WINDOW] Document-SlideWindow-Term: window={sbm_window}")
-                print(f"         g_full: contexto bilateral até {2*int(sbm_window)+1} termos (w={sbm_window})")
-                print(f"         g_slide: sliding de {graph_build_window_slide} termos (w_slide={graph_build_window_slide}) ← ADAPTADO")
             
             g_full, g_sbm_input = graph_build.build_window_graph_and_sliding(
                 df_docs, sbm_window, edge_weighting=edge_weighting, w_slide=graph_build_window_slide
             )
+
         elif graph_type == "Document-Term":
             # Document-Term usa g_full, então sem adaptação
             g_full = graph_build.extract_doc_term_graph(

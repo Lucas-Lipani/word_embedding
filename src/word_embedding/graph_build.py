@@ -25,7 +25,6 @@ def initialize_graph():
     weight_prop = g.new_edge_property("double",val = 0.0)
     layer_prop = g.new_edge_property("int")
 
-    # >>> NOVO: doc_id disponível para qualquer grafo que precise
     doc_id_prop = g.new_vertex_property("string")
 
     g.vp["amount"] = amount_prop
@@ -36,11 +35,30 @@ def initialize_graph():
     g.vp["tipo"] = tipo_prop
     g.vp["short_term"] = short_term_prop
     g.vp["posicao"] = posicao_prop
-    g.vp["doc_id"] = doc_id_prop  # <<< NOVO
+    g.vp["doc_id"] = doc_id_prop
     g.ep["weight"] = weight_prop
 
     return g
 
+
+class EdgeWeights:
+    def __init__(self, docs: list[list[str]], edge_weighting):
+        """
+        Determinar qual a unidade a ser dividida em cada evento.
+        """
+        self._unit_size = max(len(doc) for doc in docs) if edge_weighting == "inverse_window_size" else 1.0
+        self._edge_weighting = edge_weighting
+
+    def get_weight(self, context_size):
+        """
+        Aplicar os pesos calculados para o evento.
+        """
+        match self._edge_weighting:
+            case "inverse_window_size":
+                return self._unit_size / context_size
+            case _:
+                return 1.0
+            
 
 def build_window_graph(g, df, w, edge_weighting="uniform"):
     """
@@ -57,30 +75,13 @@ def build_window_graph(g, df, w, edge_weighting="uniform"):
     
     Args:
         edge_weighting: Modo de peso das arestas ('uniform' ou 'inverse_window_size').
-                        Se 'inverse_window_size', calcula peso = ceil(window_size / min_window_size)
-                        garantindo que a menor janela tenha peso 1 e maiores janelas tenham pesos >= 1
     """   
     g.vp["termos"] = g.new_vertex_property("object")
 
-    # Calcular tamanho mínimo da janela (para inverse_window_size)
-    min_window_size = 1
-    if edge_weighting == "inverse_window_size":
-        # Encontrar o tamanho mínimo de janela que aparecerá durante a construção
-        # (para cada doc, a janela mínima é 1 token na pior das hipóteses)
-        # Na prática, usamos min(2, tamanho_do_doc) como aproximação
-        window_sizes_observed = []
-        for _, row in df.iterrows():
-            tokens = row["tokens"]
-            if w == "full":
-                w_local = len(tokens)
-            else:
-                w_requested = int(w)
-                w_local = min(w_requested, len(tokens))
-            window_sizes_observed.append(w_local)
-        
-        min_window_size = min(window_sizes_observed) if window_sizes_observed else 1
-        if min_window_size <= 0:
-            min_window_size = 1
+    # Preparar lista de tokens para EdgeWeights
+    docs_tokens = [row["tokens"] for _, row in df.iterrows()]
+    edge_weights = EdgeWeights(docs_tokens, edge_weighting)
+
 
     window_vertex = {}  # chave frozenset(win_tokens) → v_jan (sem discriminação por pivô)
     term_vertex = {}  # termo → v_term
@@ -153,14 +154,8 @@ def build_window_graph(g, df, w, edge_weighting="uniform"):
 
             # camada 0: Jan → Termo central
             window_size = len(win_tokens)  # tamanho da janela completa (já inclui central)
-            # Calcular peso baseado em edge_weighting
-            if edge_weighting == "inverse_window_size":
-                # peso = window_size / min_window_size (float) para capturar proporção exata
-                weight_value = window_size / min_window_size
-                #impressao do weight_value para debug
-                # print(f"  Doc {doc_id}, window_size={window_size} → weight={weight_value}")
-            else:  # "uniform"
-                weight_value = 1.0
+            weight_value = edge_weights.get_weight(window_size)
+            # print(f"  Doc {doc_id}, window_size={window_size} → weight={weight_value}")
             
             e0 = g.edge(v_win, v_term)
             if e0 is None:
@@ -171,7 +166,6 @@ def build_window_graph(g, df, w, edge_weighting="uniform"):
                 g.ep["weight"][e0] += weight_value
 
             # camada 1: Jan → cada termo de contexto
-            # Peso = 1 / tamanho_efetivo_da_janela
             for tok in win_tokens:
                 if tok not in term_vertex:
                     v_tok = g.add_vertex()
@@ -222,22 +216,9 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weight
     if w_slide is None:
         w_slide = w
     
-    # Calcular tamanho mínimo da janela (para inverse_window_size)
-    min_window_size = 1
-    if edge_weighting == "inverse_window_size":
-        window_sizes_observed = []
-        for _, row in df.iterrows():
-            tokens = row["tokens"]
-            if w == "full":
-                w_local = len(tokens)
-            else:
-                w_requested = int(w)
-                w_local = min(w_requested, len(tokens))
-            window_sizes_observed.append(w_local)
-        
-        min_window_size = min(window_sizes_observed) if window_sizes_observed else 1
-        if min_window_size <= 0:
-            min_window_size = 1
+    # Preparar lista de tokens para EdgeWeights
+    docs_tokens = [row["tokens"] for _, row in df.iterrows()]
+    edge_weights = EdgeWeights(docs_tokens, edge_weighting)
      
     g_full = initialize_graph()
     g_slide = initialize_graph()
@@ -314,26 +295,15 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weight
                 v_term = term_vertex_full[term_central]
                 g_full.vp["amount"][v_term] += 1
 
+            window_size = len(win_tokens)
+            weight_value = edge_weights.get_weight(window_size)
+            
             e0 = g_full.edge(v_win, v_term)
             if e0 is None:
                 e0 = g_full.add_edge(v_win, v_term)
-                # Calcular peso baseado em edge_weighting
-                window_size = len(win_tokens)  # tamanho da janela completa
-                if edge_weighting == "inverse_window_size":
-                    # peso = window_size / min_window_size (float) para capturar proporção exata
-                    weight_value = window_size / min_window_size
-                else:  # "uniform"
-                    weight_value = 1.0
                 g_full.ep["weight"][e0] = weight_value
                 g_full.ep["layer"][e0] = 0
             else:
-                # Calcular peso baseado em edge_weighting
-                window_size = len(win_tokens)  # tamanho da janela completa
-                if edge_weighting == "inverse_window_size":
-                    # peso = window_size / min_window_size (float) para capturar proporção exata
-                    weight_value = window_size / min_window_size
-                else:  # "uniform"
-                    weight_value = 1.0
                 g_full.ep["weight"][e0] += weight_value
 
             for tok in win_tokens:
@@ -354,24 +324,10 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weight
                 e1 = g_full.edge(v_win, v_tok)
                 if e1 is None:
                     e1 = g_full.add_edge(v_win, v_tok)
-                    # Calcular peso baseado em edge_weighting
-                    window_size = len(win_tokens)  # tamanho da janela completa
-                    if edge_weighting == "inverse_window_size":
-                        # peso = window_size / min_window_size (float) para capturar proporção exata
-                        weight_value_ctx = window_size / min_window_size
-                    else:  # "uniform"
-                        weight_value_ctx = 1.0
-                    g_full.ep["weight"][e1] = weight_value_ctx
+                    g_full.ep["weight"][e1] = weight_value
                     g_full.ep["layer"][e1] = 1
                 else:
-                    # Calcular peso baseado em edge_weighting
-                    window_size = len(win_tokens)  # tamanho da janela completa
-                    if edge_weighting == "inverse_window_size":
-                        # peso = window_size / min_window_size (float) para capturar proporção exata
-                        weight_value_ctx = window_size / min_window_size
-                    else:  # "uniform"
-                        weight_value_ctx = 1.0
-                    g_full.ep["weight"][e1] += weight_value_ctx
+                    g_full.ep["weight"][e1] += weight_value
 
         # --------- g_slide: janelas deslizantes por SEQUÊNCIA (ordem preservada), fundidas GLOBALMENTE ---------
         # Se w_slide > número de tokens, usar size completo automaticamente
@@ -432,10 +388,7 @@ def build_window_graph_and_sliding(df, w, save_visualizations=False, edge_weight
             
             # Calcular peso de base para g_slide com edge_weighting
             window_size = len(seq)
-            if edge_weighting == "inverse_window_size":
-                base_weight = window_size / min_window_size
-            else:
-                base_weight = 1.0
+            base_weight = edge_weights.get_weight(window_size)
             
             for tok, c in freq.items():
                 v_tok = term_vertex_slide.get(tok)
@@ -618,7 +571,7 @@ def extract_context_window_term_graph(g_jan_term):
         v1, v2 = e.source(), e.target()
         tipo1 = int(g_jan_term.vp["tipo"][v1])
         tipo2 = int(g_jan_term.vp["tipo"][v2])
-        peso = g_jan_term.ep["weight"][e]  # mantém como double, sem conversão para int
+        peso = g_jan_term.ep["weight"][e]
 
         # caso layer = 0 → Janela ↔ Termo central → mantém igual
         if layer == 0 and {tipo1, tipo2} == {1, 3}:
