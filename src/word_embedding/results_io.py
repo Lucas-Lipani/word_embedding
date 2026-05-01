@@ -28,10 +28,20 @@ def save_partitions_by_config(
     w2v_vector_size: int = None,
 ):
     """
-    Salva partições na nova estrutura: conf/NNNN/run/RRRR/partition.parquet
-    Com config.json (ENTRADA) e results.json (SAÍDA) separados por modelo.
-
-    >>> IMPORTANTE: Salva APENAS dados do modelo específico em cada config <<<
+    Salva os resultados de partições e métricas para SBM e W2V em diretórios organizados por configuração.
+   
+     Parametros:
+    - base_conf_dir: Diretório base onde as configurações serão salvas.
+    - n_samples, seed, graph_type, nested, layered, n_blocks, window_size, edge_weighting: Parâmetros que definem a configuração do experimento.
+    - run_idx: Índice do run atual (geralmente incrementado a cada execução).
+    - partitions_df: DataFrame contendo as partições dos modelos (deve conter uma coluna 'model' para diferenciar SBM e W2V).
+    - sbm_entropy, vertices_pre_sbm, blocks_post_sbm, term_blocks_count, window_blocks_count: Métricas e contagens específicas do   SBM.
+    - w2v_n_clusters, w2v_sg, w2v_window, w2v_vector_size: Parâmetros e métricas específicas do W2V.
+     
+     Retorna:
+    - config_idx: Índice da configuração (corpus+window) encontrada ou criada.
+    - next_run_idx: Índice do run criado para esta execução.
+    - partition_file_sbm: Caminho do arquivo parquet onde as partições do SBM foram salvas.
     """
     cfg_mgr = config_manager.ConfigManager(base_conf_dir)
 
@@ -95,7 +105,7 @@ def save_partitions_by_config(
     run_dir_w2v = config_dir_w2v / "run" / f"{next_run_idx:04d}"
     run_dir_w2v.mkdir(parents=True, exist_ok=True)
 
-    # >>> CORRIGIDO: Salvar APENAS dados do modelo específico em cada config
+    # Salvar partições em arquivos parquet separados para SBM e W2V
     partitions_sbm = partitions_df[partitions_df["model"] == "sbm"].copy()
     partitions_w2v = partitions_df[partitions_df["model"] == "w2v"].copy()
 

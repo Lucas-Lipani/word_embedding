@@ -90,16 +90,11 @@ def tokenize_abstracts(df, nlp):
 
 def _get_graph_build_window(window_size: int | str, graph_type: str) -> int | str:
     """
-    Returns the internal window used only for graph construction.
+        Returns the internal window used only for graph construction.
 
-    The original window_size must remain unchanged for the rest of the pipeline.
+        The original window_size must remain unchanged for the rest of the pipeline.
 
-    PARIDADE: Todos os graph_types usam o mesmo tamanho de janela de CONTEXTO!
-    
-    - Document-Window-Term: window=5 → 5 esq + 1 central + 5 dir = até 11 termos
-    - Document-SlideWindow-Term: window=5 → adapted to 11 (sliding de 11 termos)
-    - W2V gensim: window=5 → 5 esq + 1 central + 5 dir = até 11 termos
-    
+        
     Adaptações:
     1. Document-SlideWindow-Term precisa aumentar window para ter contexto equivalente
        Fórmula: adapted_window = 2 * window + 1
@@ -123,15 +118,20 @@ def word_embedding(
     window_list,
     graph_type="Document-SlideWindow-Term",
     n_blocks=None,
-    fixed_seed=None,
     nested=False,
     layered=False,
     edge_weighting="uniform",
 ):
     """
-    Retorna também as informações do grafo, blocos e W2V.
-    
+    Função principal que processa cada janela da window_list, constrói os grafos, aplica SBM e extrai as partições para SBM e W2V.
+
     Args:
+        df_docs: DataFrame com os documentos e tokens
+        nlp: Modelo spaCy para tokenização
+        window_list: Lista de janelas a processar (ex.: [2, 5, 10, 20, 'full'])
+        graph_type: Tipo de grafo a construir
+        n_blocks: Número fixo de blocos para o W2V (opcional)
+        nested: Se True, usa SBM em modo nested.
         layered: Se True, usa LayeredBlockState no SBM para grafos com múltiplas camadas.
         edge_weighting: Modo de peso das arestas ('uniform' ou 'inverse_window_size').
     """
@@ -185,7 +185,7 @@ def word_embedding(
         # Aplicar SBM no grafo apropriado
         state = graph_sbm.sbm(g_sbm_input, n_blocks=None, nested=nested, layered=layered)
 
-        # >>> EXTRAIR ENTROPY DO SBM
+        # Extrair a entropia do SBM
         try:
             sbm_entropy = state.entropy()
             print(f"[SBM] Entropy: {sbm_entropy:.4f}")
@@ -193,7 +193,7 @@ def word_embedding(
             print(f"[WARN] Erro ao extrair entropy: {e}")
             sbm_entropy = None
 
-        # >>> NOVO: Contar vértices PRÉ-SBM (estrutura do grafo)
+        # Contar vértices PRÉ-SBM (estrutura do grafo)
         vertices_pre_sbm = defaultdict(int)
         for v in g_sbm_input.vertices():
             vertices_pre_sbm[int(g_sbm_input.vp["tipo"][v])] += 1
@@ -369,10 +369,16 @@ def parse_and_validate_arguments():
     """
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--runs", "--run", "--r", type=int, default=1, help="Nº de repetições"
+        "--runs", "--run", "--r", 
+        type=int,
+        default=1,
+        help="Nº de repetições"
     )
     parser.add_argument(
-        "--samples", type=int, default=10, help="Nº de documentos amostrados"
+        "--samples",
+        type=int,
+        default=10,
+        help="Nº de documentos amostrados"
     )
     parser.add_argument(
         "--seed",
@@ -402,21 +408,19 @@ def parse_and_validate_arguments():
         "--edge-weighting",
         choices=["uniform", "inverse_window_size"],
         default="uniform",
-        help="Modo de peso das arestas: 'uniform' (peso=1) ou 'inverse_window_size' (peso=1/tamanho_efetivo_da_janela). Padrão: uniform",
+        help="Modo de peso das arestas: 'uniform' (peso=1) ou 'inverse_window_size' (peso=tamanho max_documento/tamanho_janela). Padrão: uniform",
     )
     parser.add_argument(
-        "--windows",
+        "--windows", "--window", "--w",
         nargs="+",
-        default=[5, 10, 20, 40, "full"],
+        default=[2, 5, 10, 20, "full"],
         help="Lista de janelas (ex.: --windows 5 20 40 full)",
     )
     parser.add_argument(
         "--graph-type",
         choices=[
-            "Document-Window-Term",
-            "Document-SlideWindow-Term",
-            "Document-Context-Window-Term",
-            "Document-Term",
+            "Document-Window-Term", "Document-SlideWindow-Term",
+            "Document-Context-Window-Term", "Document-Term",
         ],
         default="Document-SlideWindow-Term",
         help="Tipo de grafo a construir",
@@ -455,23 +459,30 @@ def parse_and_validate_arguments():
 
 def prepare_dataframe(n_samples, fixed_seed):
     """
-    Load the corpus, shuffle it deterministically, and tokenize only until
-    enough valid documents are found.
+    Carrega o corpus, embaralha determinísticamente e tokeniza os documentos
+    até atingir a quantidade solicitada de documentos válidos.
 
-    A document is considered valid if:
-    - it has a non-null abstract
-    - it satisfies MIN_TOKENS when this filter is enabled
+    Um documento é considerado válido quando:
+    - possui um abstract (resumo) não-nulo
+    - atende ao limite mínimo de tokens (MIN_TOKENS) caso o filtro esteja habilitado
+
+    Args:
+        n_samples (int): Número de documentos válidos desejado
+        fixed_seed (int): Seed para garantir reprodutibilidade do embaralhamento
 
     Returns:
         tuple: (df_docs, nlp, n_samples_real)
+            - df_docs: DataFrame com documentos selecionados e seus tokens
+            - nlp: Modelo spaCy carregado para tokenização
+            - n_samples_real: Número efetivo de documentos carregados
     """
-    # MIN_TOKENS = 100
-    MIN_TOKENS = None  # Set to an integer to enable filtering
+    # MIN_TOKENS = 100 # Limite mínimo de tokens para considerar um documento válido (ajustável)
+    MIN_TOKENS = None  # Desabilita filtro de número mínimo de tokens
 
     nlp = spacy.load("en_core_web_sm")
     df_full = pd.read_parquet("../data_lucas_argentina169.zstd")
 
-    # Keep only valid abstracts
+    # Filtrar documentos sem abstract e garantir que abstract seja string
     df_full = df_full[df_full["abstract"].notna()].copy()
     df_full["abstract"] = df_full["abstract"].astype(str)
 
@@ -522,9 +533,6 @@ def main():
     # df_docs_sorted = df_docs.sort_values(by='tokens', key=lambda x: x.str.len())
     # for i in range(len(df_docs_sorted)):
     #     print(f"Doc {i+1} (UID: {df_docs_sorted.iloc[i]['uid']}): Número de Tokens:{len(df_docs_sorted.iloc[i]['tokens'])}")
-        
-    
-    # exit()
 
     for r in range(n_runs):
         print(f"\n=== Execução {r+1}/{n_runs} ===")
@@ -555,7 +563,6 @@ def main():
             WINDOW_LIST,
             graph_type=graph_type,
             n_blocks=n_blocks,
-            fixed_seed=fixed_seed,
             nested=nested,
             layered=layered,
             edge_weighting=edge_weighting,
@@ -615,13 +622,6 @@ def main():
                     w2v_window=w2v_window,
                     w2v_vector_size=w2v_vector_size,
                 )
-            )
-
-            # Extrair janela do parquet para log
-            window_val = (
-                partitions_df["window"].iloc[0]
-                if len(partitions_df) > 0
-                else "?"
             )
 
 

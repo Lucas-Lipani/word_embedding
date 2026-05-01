@@ -50,6 +50,9 @@ def get_or_train_w2v_model(w2v_models, window_size, df_docs, nlp):
 
 
 def kmeans_clustering(g, n_clusters, term_vectors):
+    """
+    Função auxiliar para realizar a clusterização usando KMeans e atribuir os rótulos aos vértices do grafo.
+    """
     kmeans = KMeans(n_clusters=n_clusters, random_state=42)
     labels = kmeans.fit_predict(term_vectors)
 
