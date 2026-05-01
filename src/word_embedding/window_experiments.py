@@ -88,30 +88,6 @@ def tokenize_abstracts(df, nlp):
     return df
 
 
-def _get_graph_build_window(window_size: int | str, graph_type: str) -> int | str:
-    """
-        Returns the internal window used only for graph construction.
-
-        The original window_size must remain unchanged for the rest of the pipeline.
-
-        
-    Adaptações:
-    1. Document-SlideWindow-Term precisa aumentar window para ter contexto equivalente
-       Fórmula: adapted_window = 2 * window + 1
-       Exemplo: window=5 → 11 (sliding de 11 termos ≈ bilateral até 11)
-    
-    2. Document-Window-Term usa window direto (sem adaptação)
-    """
-    if graph_type == "Document-SlideWindow-Term" and window_size != "full":
-        # Aumentar window para ter contexto equivalente ao bilateral
-        window_int = int(window_size)
-        adapted = 2 * window_int + 1
-        return adapted
-    
-    # Document-Window-Term, Document-Term, Document-Context-Window-Term: sem adaptação
-    return window_size
-
-
 def word_embedding(
     df_docs,
     nlp,
@@ -146,13 +122,9 @@ def word_embedding(
         # Constrói grafos de acordo com graph_type
         if graph_type == "Document-SlideWindow-Term":
             # Para Document-SlideWindow-Term:
-            # - g_full recebe window original (w) → contexto bilateral até 2w+1
-            # - g_slide recebe window adaptado (2w+1) → sliding de 2w+1 termos
-            
-            graph_build_window_slide = _get_graph_build_window(sbm_window, graph_type)
-            
+                        
             g_full, g_sbm_input = graph_build.build_window_graph_and_sliding(
-                df_docs, sbm_window, edge_weighting=edge_weighting, w_slide=graph_build_window_slide
+                df_docs, sbm_window, edge_weighting=edge_weighting, w_slide= 2 * sbm_window + 1 if sbm_window != "full" else sbm_window
             )
 
         elif graph_type == "Document-Term":
@@ -174,9 +146,8 @@ def word_embedding(
             )
         elif graph_type == "Document-Window-Term":
             # Usar mesmo tamanho de janela (sem adaptação - já bilateral)
-            graph_build_window = _get_graph_build_window(sbm_window, graph_type)
             g_full = graph_build.build_window_graph(
-                graph_build.initialize_graph(), df_docs, graph_build_window, edge_weighting=edge_weighting
+                graph_build.initialize_graph(), df_docs, sbm_window, edge_weighting=edge_weighting
             )
             g_sbm_input = graph_build.extract_window_term_graph(g_full)
         else:
