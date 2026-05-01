@@ -124,7 +124,8 @@ def word_embedding(
             # Para Document-SlideWindow-Term:
                         
             g_full, g_sbm_input = graph_build.build_window_graph_and_sliding(
-                df_docs, sbm_window, edge_weighting=edge_weighting, w_slide= 2 * sbm_window + 1 if sbm_window != "full" else sbm_window
+                df_docs, sbm_window, edge_weighting=edge_weighting, 
+                w_slide= 2 * sbm_window + 1 if sbm_window != "full" else sbm_window # Reajuste do tamanho da janela de slide para manter proporcionalidade (bilateral)
             )
 
         elif graph_type == "Document-Term":
