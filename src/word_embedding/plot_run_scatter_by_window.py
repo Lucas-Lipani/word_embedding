@@ -99,6 +99,7 @@ def plot_scatter_by_window(analysis_dir: Path, metric: str = "nmi"):
     filename = f"scatter_{metric}.png"
     ax.set_title(filename.replace(".png", "").capitalize())
     ax.grid(True, axis="y", alpha=0.3)
+    ax.set_ylim(0.4, 1) # Limita y para visualizar
 
     out_dir = analysis_dir / "scatter_by_window"
     out_dir.mkdir(parents=True, exist_ok=True)
