@@ -3,6 +3,7 @@ from tqdm import tqdm
 from collections import Counter
 from pathlib import Path
 import math
+from . import window_experiments
 
 
 def initialize_graph():
@@ -104,19 +105,24 @@ def build_window_graph(g, df, w, edge_weighting="uniform"):
 
         # tokenização
         toks = row["tokens"]
-
+        
         #  tamanho da janela de contexto
         if w == "full":
             w_local = len(toks)
         else:
-            w_local = int(w)
+            if type(w) == tuple:
+                w_local = window_experiments.convert_context_size_to_window(w)
+            else:
+                w_local = int(w)
 
         # ───── janelas centradas em cada token ─────
         for i, term_central in enumerate(toks):
             # W2V-like: pega w termos à esquerda + termo central + w termos à direita
-            start, end = max(0, i - w_local), min(len(toks), i + w_local + 1)
+            if type(w) == tuple:
+                start, end = max(0, i - w[0]), min(len(toks), i + w[1])
+            else:
+                start, end = max(0, i - w_local), min(len(toks), i + w_local + 1)
             win_tokens = toks[start:end]  # inclui termo central
-            # VERSÃO 1 (simples): deduplicação apenas por tokens (sem discriminação por pivô)
             win_key = frozenset(win_tokens)
 
             # --- vértice Janela ---

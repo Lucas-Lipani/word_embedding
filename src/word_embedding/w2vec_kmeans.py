@@ -1,7 +1,7 @@
 from sklearn.cluster import KMeans
 import numpy as np
 from gensim.models import Word2Vec
-
+from . import window_experiments
 
 def train_word2vec(df, nlp, window):
     """
@@ -42,6 +42,9 @@ def get_or_train_w2v_model(w2v_models, window_size, df_docs, nlp):
     Retorna modelo Word2Vec treinado para a janela fornecida.
     Se já existir no dicionário, reutiliza.
     """
+
+    if type(window_size) == tuple:
+        window_size = window_experiments.convert_context_size_to_window(window_size)
     if window_size not in w2v_models:
         w_int = 10000 if window_size == "full" else int(window_size)
         model = train_word2vec(df_docs, nlp, w_int)

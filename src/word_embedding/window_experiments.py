@@ -17,6 +17,16 @@ from . import (
 BASE_DIR = Path(__file__).resolve().parent
 
 
+def convert_context_size_to_window(context_size, asymmetric_left=False):
+    """
+    Converte um tamanho total de contexto em uma janela (window) para Word2Vec.
+    Se asymmetric_left for True, prefere mais contexto à esquerda.
+    Exemplo: context_size=5 -> window=2 (simétrico) ou (left=3, right=1) se assimétrico.
+    """
+    if context_size == "full":
+        return "full"
+    return context_size[0] + context_size[1]
+
 def _get_vertex_blocks_map(state, level: int = 0):
     """
     Return a vertex->block PropertyMap for BlockState/LayeredBlockState/NestedBlockState.
@@ -153,7 +163,7 @@ def word_embedding(
             g_sbm_input = graph_build.extract_window_term_graph(g_full)
         else:
             raise ValueError(f"graph_type desconhecido: {graph_type}")
-
+        
         # Aplicar SBM no grafo apropriado
         state = graph_sbm.sbm(g_sbm_input, n_blocks=None, nested=nested, layered=layered)
 
@@ -203,7 +213,10 @@ def word_embedding(
         # >>> NOVO: Extrair informações do W2V
         w2v_model = w2v_models[sbm_window]
         w2v_sg = 1  # Skip-gram (conforme train_word2vec)
-        w2v_window = 10000 if sbm_window == "full" else int(sbm_window)
+        if type(sbm_window) == tuple:
+            w2v_window = 0000 if sbm_window == "full" else convert_context_size_to_window(sbm_window)
+        else:
+            w2v_window = 10000 if sbm_window == "full" else sbm_window
         w2v_vector_size = 100  # conforme train_word2vec
 
         # ====== Extrai labels do SBM no grafo de entrada ======
@@ -389,6 +402,19 @@ def parse_and_validate_arguments():
         help="Lista de janelas (ex.: --windows 5 20 40 full)",
     )
     parser.add_argument(
+        "--context-sizes",
+        nargs="+",
+        type=int,
+        default=None,
+        help="Lista de tamanhos totais de contexto (ex.: --context-sizes 1 2 3 4 5 10). Com --asymmetric-left cria contextos assimétricos.",
+    )
+    parser.add_argument(
+        "--asymmetric-left",
+        action="store_true",
+        default=False,
+        help="Quando usado com --context-sizes, cria contextos assimétricos preferindo esquerda (ex: size=4 -> left=2, right=1).",
+    )
+    parser.add_argument(
         "--graph-type",
         choices=[
             "Document-Window-Term", "Document-SlideWindow-Term",
@@ -423,7 +449,26 @@ def parse_and_validate_arguments():
         x = str(x).strip().lower()
         return "full" if x == "full" else int(x)
 
-    WINDOW_LIST = [_parse_win(w) for w in args.windows]
+    # Processar context-sizes com asymmetric-left ou windows normais
+    if args.context_sizes is not None and args.asymmetric_left:
+        # Converter context-sizes em pairs (left, right) assimétricos
+        # Preferindo esquerda: size=4 -> (2,1), size=5 -> (2,2), etc
+        WINDOW_LIST = []
+        for size in args.context_sizes:
+            left = (size + 1) // 2  # Preferir esquerda
+            right = size // 2
+            WINDOW_LIST.append((left, right))
+        print(f"[INFO] Context sizes (asymmetric-left): {args.context_sizes}")
+        print(f"[INFO] Converted to (left, right) pairs: {WINDOW_LIST}")
+    elif args.context_sizes is not None:
+        # Converter context-sizes simétricos
+        # contexto_total = 2 * window + 1, então window = (contexto_total - 1) // 2
+        WINDOW_LIST = [(size - 1) // 2 for size in args.context_sizes]
+        print(f"[INFO] Context sizes (symmetric): {args.context_sizes}")
+        print(f"[INFO] Converted to windows: {WINDOW_LIST}")
+    else:
+        WINDOW_LIST = [_parse_win(w) for w in args.windows]
+    
     OUT_CONF = Path("../outputs/conf")
 
     return n_runs, n_samples, fixed_seed, WINDOW_LIST, args.graph_type, args.n_blocks, args.nested, args.layered, args.edge_weighting, OUT_CONF

@@ -13,6 +13,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import colorcet as cc
+from . import window_experiments
 
 
 def _window_sort_key(w):
@@ -25,17 +26,18 @@ def _window_sort_key(w):
 
 def _get_context_label(window_val):
     """
-    Converte valor de janela para rótulo mostrando apenas tokens de contexto real.
-    
-    Fórmula: window=W → contexto = 2*W + 1 tokens
-    Exemplo: window=5 → "11t"
+    Converte a tupla da janela para um rótulo legível, mostrando o número de tokens de contexto.
+    Exemplo: (2, 1) -> "3t" (2 à esquerda + 1 à direita = 3 tokens de contexto)
+    Se for "full", retorna "full".
     """
+    if window_val == "full":
+        return "Full Context"
     try:
-        w = int(window_val)
-        context_tokens = 2 * w + 1
-        return f"{context_tokens}t"
-    except (ValueError, TypeError):
-        # Se não for número (ex: "full"), mostra "full"
+        left, right = eval(window_val)  # Converte string de tupla para tupla real
+        total = left + right
+        # print(f"DEBUG: window_val={window_val} -> left={left}, right={right}, total={total}")
+        return f"{total}t"  # Ex: "3t" para 3 tokens de contexto
+    except Exception:
         return str(window_val)
 
 
