@@ -42,7 +42,7 @@ def _compare_metrics(labels_a: np.ndarray, labels_b: np.ndarray) -> dict:
 
 
 def find_all_configs_by_corpus(
-    base_conf_dir: Path, seed: int, n_samples: int, graph_type: str | None = None, layered: bool = False, nested: bool = False, edge_weighting: str = "uniform"
+    base_conf_dir: Path, seed: int, n_samples: int, graph_type: str | None = None, layered: bool = False, nested: bool = False, edge_weighting: str = "inverse_window_size"
 ) -> dict:
     """
     Find ALL configs that share seed + n_samples (+ graph_type + layered + nested + edge_weighting).
@@ -75,7 +75,7 @@ def find_all_configs_by_corpus(
             cfg_layered = cfg.get("graph", {}).get("sbm_layered", False)
             cfg_sbm_variant = cfg.get("graph", {}).get("sbm_variant", "flat")
             cfg_nested = cfg_sbm_variant == "nested"  # Converter "nested"/"flat" para boolean
-            cfg_edge_weighting = cfg.get("graph", {}).get("edge_weighting", "uniform")
+            cfg_edge_weighting = cfg.get("graph", {}).get("edge_weighting", "inverse_window_size")
             
             if cfg_seed != seed or cfg_samples != n_samples:
                 continue
@@ -437,7 +437,7 @@ def compute_global_analysis(
     graph_type: str | None = None,
     layered: bool = False,
     nested: bool = False,
-    edge_weighting: str = "uniform",
+    edge_weighting: str = "inverse_window_size",
 
 ):
     """
@@ -599,6 +599,7 @@ def compute_global_analysis(
         sbm_variant = None
         sbm_layered = False
         window_size = None
+        extracted_context = False
         extracted_edge_weighting = None
         for cfg_idx in all_config_indices:
             if cfg_idx in configs_found:
@@ -613,7 +614,8 @@ def compute_global_analysis(
                         sbm_variant = cfg_graph.get("sbm_variant", "flat")
                         sbm_layered = cfg_graph.get("sbm_layered", False)
                         window_size = str(cfg_graph.get("window_size", "5"))
-                        extracted_edge_weighting = cfg_graph.get("edge_weighting", "uniform")
+                        extracted_context = cfg_graph.get("context", False)
+                        extracted_edge_weighting = cfg_graph.get("edge_weighting", "inverse_window_size")
                         break
                     except Exception as e:
                         print(f"[WARN] Erro ao ler config {cfg_idx}: {e}")
@@ -628,6 +630,7 @@ def compute_global_analysis(
             sbm_variant=sbm_variant,
             sbm_layered=sbm_layered,
             window_size=window_size,
+            context=extracted_context,
             edge_weighting=extracted_edge_weighting,
         )
 
@@ -685,8 +688,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--edge-weighting",
         choices=["uniform", "inverse_window_size"],
-        default="uniform",
-        help="Modo de peso das arestas: 'uniform' (peso=1) ou 'inverse_window_size' (peso=1/tamanho_janela). Padrão: uniform",
+        default="inverse_window_size",
+        help="Modo de peso das arestas: 'uniform' (peso=1) ou 'inverse_window_size' (peso=1/tamanho_janela). Padrão: inverse_window_size",
     )
     args = parser.parse_args()
 

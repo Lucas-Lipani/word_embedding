@@ -56,6 +56,8 @@ class EdgeWeights:
         """
         match self._edge_weighting:
             case "inverse_window_size":
+                # print(f"  Calculando peso para context_size={context_size} → weight={self._unit_size} / {context_size} = \nERRO")
+                # exit()
                 return self._unit_size / context_size
             case _:
                 return 1.0
@@ -107,22 +109,22 @@ def build_window_graph(g, df, w, edge_weighting="uniform"):
         toks = row["tokens"]
         
         #  tamanho da janela de contexto
+        # Normalizar w em (left, right) para uso consistente
         if w == "full":
-            w_local = len(toks)
+            left = right = len(toks)
         else:
-            if type(w) == tuple:
-                w_local = window_experiments.convert_context_size_to_window(w)
+            if isinstance(w, tuple):
+                left, right = w
             else:
-                w_local = int(w)
+                left = right = int(w)
 
         # ───── janelas centradas em cada token ─────
         for i, term_central in enumerate(toks):
-            # W2V-like: pega w termos à esquerda + termo central + w termos à direita
-            if type(w) == tuple:
-                start, end = max(0, i - w[0]), min(len(toks), i + w[1])
-            else:
-                start, end = max(0, i - w_local), min(len(toks), i + w_local + 1)
-            win_tokens = toks[start:end]  # inclui termo central
+            # W2V-like: pega w[0] termos à esquerda + termo central + w[1] termos à direita
+            # Use left/right sempre (left/right já normalizados acima)
+            start = max(0, i - left)
+            end = min(len(toks), i + right + 1)  # +1 para incluir o termo na posição 'i'
+            win_tokens = toks[start:end]
             win_key = frozenset(win_tokens)
 
             # --- vértice Janela ---

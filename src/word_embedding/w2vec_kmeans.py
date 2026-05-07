@@ -43,13 +43,23 @@ def get_or_train_w2v_model(w2v_models, window_size, df_docs, nlp):
     Se já existir no dicionário, reutiliza.
     """
 
-    if type(window_size) == tuple:
-        window_size = window_experiments.convert_context_size_to_window(window_size)
-    if window_size not in w2v_models:
+    # Normalize window_size: accept int, "full", or tuple (left,right).
+    key = window_size
+    if isinstance(window_size, tuple):
+        left, right = window_size
+        w_int = max(left, right)
+        key = (left, right)
+    else:
         w_int = 10000 if window_size == "full" else int(window_size)
+
+    # gensim Word2Vec expects window >= 1; if computed window is 0, use 1 for training
+    if w_int != 10000:
+        w_int = max(1, int(w_int))
+
+    if key not in w2v_models:
         model = train_word2vec(df_docs, nlp, w_int)
-        w2v_models[window_size] = model
-    return w2v_models[window_size]
+        w2v_models[key] = model
+    return w2v_models[key]
 
 
 def kmeans_clustering(g, n_clusters, term_vectors):

@@ -35,6 +35,7 @@ class ConfigManager:
         layered: bool,
         n_blocks: int | None,
         window_size: int | str,
+        context: bool = False,
         edge_weighting: str = "uniform",
     ) -> str:
         """
@@ -53,6 +54,7 @@ class ConfigManager:
                     "sbm_layered": layered,
                     "fixed_n_blocks": n_blocks,
                     "window_size": str(window_size),
+                    "context": context,
                     "edge_weighting": edge_weighting,
                 },
             },
@@ -69,6 +71,7 @@ class ConfigManager:
         n_blocks: int | None,
         window_size: int | str,
         edge_weighting: str = "uniform",
+        context: bool = False,
     ) -> tuple[Path, Path, int]:
         """
         Encontra/cria 2 configs: uma para SBM e outra para W2V.
@@ -77,8 +80,17 @@ class ConfigManager:
 
         :return: (config_dir_sbm, config_dir_w2v, corpus_signature_idx)
         """
+
         corpus_sig = self._get_corpus_signature(
-            n_samples, seed, graph_type, nested, layered, n_blocks, window_size, edge_weighting
+            n_samples,
+            seed,
+            graph_type,
+            nested,
+            layered,
+            n_blocks,
+            window_size,
+            context,
+            edge_weighting,
         )
 
         config_dirs = sorted(self.base_conf_dir.glob("????"))
@@ -113,6 +125,7 @@ class ConfigManager:
                             "sbm_layered": graph.get("sbm_layered", False),
                             "fixed_n_blocks": graph.get("fixed_n_blocks"),
                             "window_size": str(graph.get("window_size", "5")),
+                            "context": graph.get("context", False),
                             "edge_weighting": graph.get("edge_weighting", "uniform"),
                         },
                     },
@@ -162,6 +175,7 @@ class ConfigManager:
         layered: bool,
         n_blocks: int | None,
         window_size: int | str,
+        context: bool = False,
         edge_weighting: str = "uniform",
     ) -> Path:
         """
@@ -186,6 +200,7 @@ class ConfigManager:
                     "sbm_layered": layered,
                     "fixed_n_blocks": n_blocks,
                     "window_size": window_size,
+                    "context": context,
                     "edge_weighting": edge_weighting,
                 },
                 "model": {
@@ -205,6 +220,7 @@ class ConfigManager:
                     "sbm_layered": layered,
                     "fixed_n_blocks": n_blocks,
                     "window_size": window_size,
+                    "context": context,
                     "edge_weighting": edge_weighting,
                 },
                 "model": {

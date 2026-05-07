@@ -163,7 +163,7 @@ def word_embedding(
             g_sbm_input = graph_build.extract_window_term_graph(g_full)
         else:
             raise ValueError(f"graph_type desconhecido: {graph_type}")
-        
+
         # Aplicar SBM no grafo apropriado
         state = graph_sbm.sbm(g_sbm_input, n_blocks=None, nested=nested, layered=layered)
 
@@ -408,12 +408,7 @@ def parse_and_validate_arguments():
         default=None,
         help="Lista de tamanhos totais de contexto (ex.: --context-sizes 1 2 3 4 5 10). Com --asymmetric-left cria contextos assimétricos.",
     )
-    parser.add_argument(
-        "--asymmetric-left",
-        action="store_true",
-        default=False,
-        help="Quando usado com --context-sizes, cria contextos assimétricos preferindo esquerda (ex: size=4 -> left=2, right=1).",
-    )
+
     parser.add_argument(
         "--graph-type",
         choices=[
@@ -449,30 +444,44 @@ def parse_and_validate_arguments():
         x = str(x).strip().lower()
         return "full" if x == "full" else int(x)
 
-    # Processar context-sizes com asymmetric-left ou windows normais
-    if args.context_sizes is not None and args.asymmetric_left:
-        # Converter context-sizes em pairs (left, right) assimétricos
-        # Preferindo esquerda: size=4 -> (2,1), size=5 -> (2,2), etc
+    # Processar context-sizes: sempre converter para janelas simétricas
+    using_context = args.context_sizes is not None
+    WINDOW_CONTEXT_MAP = {}
+
+    if using_context:
         WINDOW_LIST = []
         for size in args.context_sizes:
-            left = (size + 1) // 2  # Preferir esquerda
-            right = size // 2
-            WINDOW_LIST.append((left, right))
-        print(f"[INFO] Context sizes (asymmetric-left): {args.context_sizes}")
-        print(f"[INFO] Converted to (left, right) pairs: {WINDOW_LIST}")
-    elif args.context_sizes is not None:
-        # Converter context-sizes simétricos
-        # contexto_total = 2 * window + 1, então window = (contexto_total - 1) // 2
-        WINDOW_LIST = [(size - 1) // 2 for size in args.context_sizes]
-        print(f"[INFO] Context sizes (symmetric): {args.context_sizes}")
-        print(f"[INFO] Converted to windows: {WINDOW_LIST}")
+            if size % 2 == 1:
+                graph_window = (size - 1) // 2
+            else:
+                left = size // 2
+                right = (size - 1) // 2
+                graph_window = (left, right)
+
+            WINDOW_LIST.append(graph_window)
+            WINDOW_CONTEXT_MAP[str(graph_window)] = size
+
+        print(f"[INFO] Context sizes: {args.context_sizes}")
+        print(f"[INFO] Converted to windows (int or (L,R) tuples): {WINDOW_LIST}")
     else:
         WINDOW_LIST = [_parse_win(w) for w in args.windows]
     
     OUT_CONF = Path("../outputs/conf")
 
-    return n_runs, n_samples, fixed_seed, WINDOW_LIST, args.graph_type, args.n_blocks, args.nested, args.layered, args.edge_weighting, OUT_CONF
-
+    return (
+        n_runs,
+        n_samples,
+        fixed_seed,
+        WINDOW_LIST,
+        args.graph_type,
+        args.n_blocks,
+        args.nested,
+        args.layered,
+        args.edge_weighting,
+        OUT_CONF,
+        using_context,
+        WINDOW_CONTEXT_MAP,
+    )
 
 def prepare_dataframe(n_samples, fixed_seed):
     """
@@ -538,9 +547,20 @@ def prepare_dataframe(n_samples, fixed_seed):
 
 def main():
     # Parse argumentos
-    n_runs, n_samples, fixed_seed, WINDOW_LIST, graph_type, n_blocks, nested, layered, edge_weighting, OUT_CONF = (
-        parse_and_validate_arguments()
-    )
+    (
+        n_runs,
+        n_samples,
+        fixed_seed,
+        WINDOW_LIST,
+        graph_type,
+        n_blocks,
+        nested,
+        layered,
+        edge_weighting,
+        OUT_CONF,
+        using_context,
+        WINDOW_CONTEXT_MAP,
+    ) = parse_and_validate_arguments()
 
     # Prepara dataframe (retorna n_samples ajustado se necessário)
     df_docs, nlp, n_samples = prepare_dataframe(n_samples, fixed_seed)
@@ -605,11 +625,16 @@ def main():
             # Calcular número de blocos de termos
             n_term_blocks = term_blocks if term_blocks else 0
 
-            # >>> EXTRAIR WINDOW_SIZE DO DATAFRAME
-            window_size = (
+            raw_window_size = (
                 partitions_df["window"].iloc[0]
                 if len(partitions_df) > 0
                 else "5"
+            )
+
+            window_size = (
+                WINDOW_CONTEXT_MAP.get(str(raw_window_size), raw_window_size)
+                if using_context
+                else raw_window_size
             )
 
             config_idx, run_idx, partition_file = (
@@ -624,6 +649,7 @@ def main():
                     run_idx=r + 1,
                     partitions_df=partitions_df,
                     window_size=window_size,
+                    context=using_context,
                     edge_weighting=edge_weighting,
                     sbm_entropy=sbm_entropy,
                     vertices_pre_sbm=(

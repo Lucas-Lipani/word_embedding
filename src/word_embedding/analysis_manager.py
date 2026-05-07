@@ -94,6 +94,7 @@ class AnalysisManager:
         sbm_variant: str | None = None,
         sbm_layered: bool = False,
         window_size: str | None = None,
+        context: bool = False,
         edge_weighting: str | None = None,
     ) -> Path:
         """
@@ -125,6 +126,7 @@ class AnalysisManager:
                 "sbm_layered": sbm_layered,
                 "window_size": window_size,
                 "edge_weighting": edge_weighting,
+                "context": context,
             },
         }
 

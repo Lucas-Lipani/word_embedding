@@ -6,6 +6,7 @@ Arquivo contém comparações entre configurations com colunas de janelas.
 """
 
 import argparse
+import ast
 import json
 import sys
 from pathlib import Path
@@ -22,24 +23,7 @@ def _window_sort_key(w):
         return (0, int(w))
     except (ValueError, TypeError):
         return (1, str(w))
-
-
-def _get_context_label(window_val):
-    """
-    Converte a tupla da janela para um rótulo legível, mostrando o número de tokens de contexto.
-    Exemplo: (2, 1) -> "3t" (2 à esquerda + 1 à direita = 3 tokens de contexto)
-    Se for "full", retorna "full".
-    """
-    if window_val == "full":
-        return "Full Context"
-    try:
-        left, right = eval(window_val)  # Converte string de tupla para tupla real
-        total = left + right
-        # print(f"DEBUG: window_val={window_val} -> left={left}, right={right}, total={total}")
-        return f"{total}t"  # Ex: "3t" para 3 tokens de contexto
-    except Exception:
-        return str(window_val)
-
+    
 
 def plot_average_heatmaps(analysis_dir: Path):
     """
@@ -56,6 +40,7 @@ def plot_average_heatmaps(analysis_dir: Path):
     config_data = {}
     model_label = "Unknown"
     title_suffix = ""
+    is_context = False
     
     if config_file.exists():
         try:
@@ -70,6 +55,11 @@ def plot_average_heatmaps(analysis_dir: Path):
             corpus = config_data.get("corpus", {})
             seed = corpus.get("seed", "unknown")
             num_samples = corpus.get("number_of_documents", "unknown")
+
+            # Extrair se é análise de contexto ou não
+            graph = config_data.get("graph", {})
+            is_context = graph.get("context", False)
+
             title_suffix = f"Seed: {seed} | Samples: {num_samples}"
         except Exception as e:
             print(f"[WARN] Erro ao carregar config.json: {e}", file=sys.stderr)
@@ -162,8 +152,55 @@ def plot_average_heatmaps(analysis_dir: Path):
             pivot = pivot.loc[rows_sorted, cols_sorted]
             
             # Converter rótulos das janelas para mostrar tokens de contexto
-            row_labels = [_get_context_label(w) for w in rows_sorted]
-            col_labels = [_get_context_label(w) for w in cols_sorted]
+            if is_context:
+                row_labels = []
+                for w in rows_sorted:
+                    w_str = str(w)
+
+                    if w_str.lower() == "full":
+                        row_labels.append("Full")
+                    elif w_str.startswith("("):
+                        left, right = ast.literal_eval(w_str)
+                        row_labels.append(f"{left + right + 1}t")
+                    else:
+                        row_labels.append(f"{int(w_str)}t")
+
+                col_labels = []
+                for w in cols_sorted:
+                    w_str = str(w)
+
+                    if w_str.lower() == "full":
+                        col_labels.append("Full")
+                    elif w_str.startswith("("):
+                        left, right = ast.literal_eval(w_str)
+                        col_labels.append(f"{left + right + 1}t")
+                    else:
+                        col_labels.append(f"{int(w_str)}t")
+
+            else:
+                row_labels = []
+                for w in rows_sorted:
+                    w_str = str(w)
+
+                    if w_str.lower() == "full":
+                        row_labels.append("Full")
+                    elif w_str.startswith("("):
+                        left, right = ast.literal_eval(w_str)
+                        row_labels.append(f"{left + right + 1}t")
+                    else:
+                        row_labels.append(f"{2 * int(w_str) + 1}t")
+
+                col_labels = []
+                for w in cols_sorted:
+                    w_str = str(w)
+
+                    if w_str.lower() == "full":
+                        col_labels.append("Full")
+                    elif w_str.startswith("("):
+                        left, right = ast.literal_eval(w_str)
+                        col_labels.append(f"{left + right + 1}t")
+                    else:
+                        col_labels.append(f"{2 * int(w_str) + 1}t")
             
             # Renomear índices
             pivot.index = row_labels
