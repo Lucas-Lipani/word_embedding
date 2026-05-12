@@ -107,6 +107,7 @@ def word_embedding(
     nested=False,
     layered=False,
     edge_weighting="uniform",
+    context_sizes=None,
 ):
     """
     Função principal que processa cada janela da window_list, constrói os grafos, aplica SBM e extrai as partições para SBM e W2V.
@@ -121,13 +122,19 @@ def word_embedding(
         layered: Se True, usa LayeredBlockState no SBM para grafos com múltiplas camadas.
         edge_weighting: Modo de peso das arestas ('uniform' ou 'inverse_window_size').
     """
+
     w2v_models = {
         w: w2vec_kmeans.get_or_train_w2v_model({}, w, df_docs, nlp)
         for w in window_list
     }
 
     for sbm_window in window_list:
-        print(f"\n### SBM janela = {sbm_window}")
+        if context_sizes is not None:
+            current_window_label = context_sizes[str(sbm_window)]
+            print(f"\n### CONTEXT size = {current_window_label}")
+        else:
+            current_window_label = sbm_window
+            print(f"\n### SBM janela = {sbm_window}")
 
         # Constrói grafos de acordo com graph_type
         if graph_type == "Document-SlideWindow-Term":
@@ -135,7 +142,7 @@ def word_embedding(
                         
             g_full, g_sbm_input = graph_build.build_window_graph_and_sliding(
                 df_docs, sbm_window, edge_weighting=edge_weighting, 
-                w_slide= 2 * sbm_window + 1 if sbm_window != "full" else sbm_window # Reajuste do tamanho da janela de slide para manter proporcionalidade (bilateral)
+                w_slide= 2 * sbm_window + 1 if sbm_window != "full" else sbm_window
             )
 
         elif graph_type == "Document-Term":
@@ -237,8 +244,10 @@ def word_embedding(
             sbm_lbl = int(blocks_vec[int(v)])
             freq = int(g_sbm_input.vp["amount"][v]) if "amount" in g_sbm_input.vp else 0
 
+
+            
             row = {
-                "window": sbm_window,
+                "window": current_window_label,
                 "model": "sbm",
                 "vertex": name,
                 "tipo": t,
@@ -303,7 +312,7 @@ def word_embedding(
 
             doc_rows.append(
                 {
-                    "window": sbm_window,
+                    "window": current_window_label,
                     "model": "sbm",
                     "vertex": doc_id_str,
                     "tipo": 0,
@@ -331,7 +340,7 @@ def word_embedding(
             
             w2v_rows.append(
                 {
-                    "window": sbm_window,
+                    "window": current_window_label,
                     "model": "w2v",
                     "term": term,
                     "vertex": term,
@@ -392,14 +401,14 @@ def parse_and_validate_arguments():
     parser.add_argument(
         "--edge-weighting",
         choices=["uniform", "inverse_window_size"],
-        default="uniform",
+        default="inverse_window_size",
         help="Modo de peso das arestas: 'uniform' (peso=1) ou 'inverse_window_size' (peso=tamanho max_documento/tamanho_janela). Padrão: uniform",
     )
     parser.add_argument(
         "--windows", "--window", "--w",
         nargs="+",
-        default=[2, 5, 10, 20, "full"],
-        help="Lista de janelas (ex.: --windows 5 20 40 full)",
+        default=[2, 10, 17, 25,"full"],
+        help="Lista de janelas (ex.: --windows 2, 10, 17, 25, full)",
     )
     parser.add_argument(
         "--context-sizes",
@@ -415,8 +424,8 @@ def parse_and_validate_arguments():
             "Document-Window-Term", "Document-SlideWindow-Term",
             "Document-Context-Window-Term", "Document-Term",
         ],
-        default="Document-SlideWindow-Term",
-        help="Tipo de grafo a construir",
+        default="Document-Window-Term",
+        help="Tipo de grafo a construir, default = Document-Window-Term.",
     )
 
     args = parser.parse_args()
@@ -452,7 +461,8 @@ def parse_and_validate_arguments():
         WINDOW_LIST = []
         for size in args.context_sizes:
             if size % 2 == 1:
-                graph_window = (size - 1) // 2
+                left = right = size // 2
+                graph_window = (left, right)
             else:
                 left = size // 2
                 right = (size - 1) // 2
@@ -578,6 +588,7 @@ def main():
         print(f"Tipo de Grafo: {graph_type}")
         print(f"Layered SBM: {layered}")
         print(f"Nested SBM: {nested}")
+        print(f"Documentos: {n_samples}")
         print (f"Peso das arestas: {edge_weighting}")
 
         # >>> MODIFICADO: processar cada janela SEPARADAMENTE
@@ -603,6 +614,7 @@ def main():
             nested=nested,
             layered=layered,
             edge_weighting=edge_weighting,
+            context_sizes=WINDOW_CONTEXT_MAP if using_context else None,
         ):
             partitions_rows = []
             partitions_rows.extend(sbm_rows)
@@ -625,17 +637,8 @@ def main():
             # Calcular número de blocos de termos
             n_term_blocks = term_blocks if term_blocks else 0
 
-            raw_window_size = (
-                partitions_df["window"].iloc[0]
-                if len(partitions_df) > 0
-                else "5"
-            )
-
-            window_size = (
-                WINDOW_CONTEXT_MAP.get(str(raw_window_size), raw_window_size)
-                if using_context
-                else raw_window_size
-            )
+            window_size = partitions_df["window"].iloc[0]
+            partitions_df["window"] = str(window_size)
 
             config_idx, run_idx, partition_file = (
                 results_io.save_partitions_by_config(

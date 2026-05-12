@@ -479,12 +479,15 @@ def compute_global_analysis(
         return False
 
     print(f"\n[FOUND] {len(configs_found)} configs encontradas:")
+    
+    config_windows = set()
+
     for idx in sorted(configs_found.keys()):
         cfg = configs_found[idx]
         print(
             f"  Config {idx:04d}: {cfg['model']} | graph_type: {cfg.get('graph_type', 'N/A')} | layered: {cfg.get('layered', 'N/A')} | windows: {cfg['windows']} | nested: {cfg.get('nested', 'N/A')}"
         )
-
+        config_windows.update(cfg['windows'])
     sbm_configs = {
         idx: cfg for idx, cfg in configs_found.items() if cfg["model"] == "sbm"
     }
@@ -620,6 +623,12 @@ def compute_global_analysis(
                     except Exception as e:
                         print(f"[WARN] Erro ao ler config {cfg_idx}: {e}")
 
+        # Garantir que as janelas estejam em ordem numérica, com "full" no final
+        config_windows = sorted(
+            config_windows,
+            key=lambda w: (w == "full", int(w) if w.isdigit() else w)
+        )
+
         ana_mgr.save_analysis_config(
             analysis_dir,
             all_config_indices,
@@ -629,7 +638,7 @@ def compute_global_analysis(
             graph_type=extracted_graph_type,
             sbm_variant=sbm_variant,
             sbm_layered=sbm_layered,
-            window_size=window_size,
+            window_size=config_windows,
             context=extracted_context,
             edge_weighting=extracted_edge_weighting,
         )
