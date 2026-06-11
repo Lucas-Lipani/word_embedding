@@ -352,6 +352,28 @@ def plot_dual_model_window_metric(
         zorder=4,
     )
 
+    # Annotate W2V self-comparison values
+    for window in windows:
+        if window not in top_w2v.index:
+            continue
+
+        if pd.isna(top_w2v.loc[window, "w2v_self_metric"]):
+            continue
+
+        x_value = x_map[window]
+        y_value = float(top_w2v.loc[window, "w2v_self_metric"])
+
+        ax_metric.annotate(
+            f"{y_value:.3f}",
+            (x_value, y_value),
+            textcoords="offset points",
+            xytext=(0, -14),
+            ha="center",
+            va="top",
+            fontsize=8,
+            color="#1f77b4",
+        )
+
     for window in windows:
         if window not in top_sbm.index:
             continue
@@ -364,7 +386,7 @@ def plot_dual_model_window_metric(
         sbm_window = top_sbm.loc[window, "sbm_window"]
 
         ax_metric.annotate(
-            f"J{sbm_window}",
+            f"{float(y_value):.3f}",
             (x_value, y_value),
             textcoords="offset points",
             xytext=(0, 8),
