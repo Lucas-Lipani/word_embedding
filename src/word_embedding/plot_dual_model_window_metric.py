@@ -164,16 +164,19 @@ def _collect_rows_from_analysis_dir(
     if df.empty or metric not in df.columns:
         return pd.DataFrame()
 
-    if {"model_x", "model_y", "window_x", "window_y"}.issubset(df.columns):
-        df = df[df["window_x"].astype(str) == df["window_y"].astype(str)].copy()
-    else:
+    required_cols = {"model_x", "model_y", "window_x", "window_y"}
+    if not required_cols.issubset(df.columns):
         return pd.DataFrame()
 
     if comparison_type == "w2v_vs_w2v":
+        # For W2V self-comparison, we only want the same W2V window.
+        df = df[df["window_x"].astype(str) == df["window_y"].astype(str)].copy()
+
         df = df[
             (df["model_x"] == "w2v+kmeans")
             & (df["model_y"] == "w2v+kmeans")
         ].copy()
+
         if df.empty:
             return pd.DataFrame()
 
@@ -189,7 +192,13 @@ def _collect_rows_from_analysis_dir(
             )
 
     elif comparison_type == "sbm_vs_w2v":
-        df = df[(df["model_x"] == "sbm") & (df["model_y"] == "w2v+kmeans")].copy()
+        # For SBM × W2V, do NOT filter window_x == window_y.
+        # We need all SBM windows for each W2V window to find the best SBM match.
+        df = df[
+            (df["model_x"] == "sbm")
+            & (df["model_y"] == "w2v+kmeans")
+        ].copy()
+
         if df.empty:
             return pd.DataFrame()
 
@@ -212,7 +221,6 @@ def _collect_rows_from_analysis_dir(
 
     return pd.DataFrame(rows)
 
-
 def _summarize_w2v_self(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(columns=["w2v_window", "w2v_self_metric"])
@@ -231,13 +239,21 @@ def _summarize_sbm_cross(df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=["w2v_window", "sbm_window", "sbm_metric"])
 
     rows: list[dict[str, object]] = []
+
     for w2v_window, group in df.groupby("w2v_window", dropna=False):
         if group.empty:
             continue
 
         best_metric = group["metric"].max()
         best_rows = group[group["metric"] == best_metric].copy()
-        best_row = best_rows.sort_values("sbm_window", key=lambda s: s.astype(str)).iloc[0]
+
+        # Stable tie-break: prefer smaller token window if multiple SBM windows have same score.
+        best_rows["sbm_token_count"] = best_rows["sbm_window"].map(_window_to_token_count)
+
+        best_row = best_rows.sort_values(
+            ["sbm_token_count", "sbm_window"],
+            na_position="last",
+        ).iloc[0]
 
         rows.append(
             {
@@ -248,7 +264,6 @@ def _summarize_sbm_cross(df: pd.DataFrame) -> pd.DataFrame:
         )
 
     return pd.DataFrame(rows)
-
 
 def plot_dual_model_window_metric(
     seed: int,
@@ -301,7 +316,6 @@ def plot_dual_model_window_metric(
     )
     x_map = {window: idx for idx, window in enumerate(windows)}
 
-    fig, ax = plt.subplots(figsize=(13, 7))
 
     fig, (ax_metric, ax_sbm) = plt.subplots(
         2,
@@ -367,8 +381,8 @@ def plot_dual_model_window_metric(
             f"{y_value:.3f}",
             (x_value, y_value),
             textcoords="offset points",
-            xytext=(0, -14),
-            ha="center",
+            xytext=(-8, -8),
+            ha="right",
             va="top",
             fontsize=8,
             color="#1f77b4",
@@ -389,8 +403,9 @@ def plot_dual_model_window_metric(
             f"{float(y_value):.3f}",
             (x_value, y_value),
             textcoords="offset points",
-            xytext=(0, 8),
-            ha="center",
+            xytext=(8, -5),
+            ha="left",
+            va="top",
             fontsize=8,
             color="#d62728",
         )
