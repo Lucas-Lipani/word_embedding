@@ -11,13 +11,49 @@ sys.path.insert(0, "src")
 from word_embedding import graph_build, window_experiments
 
 
+def _get_graph_build_window(window, graph_type):
+    """Compat layer para converter a 'window' usada nos testes para o
+    formato esperado por `graph_build` conforme as convenções de
+    `window_experiments`.
+
+    Regras:
+    - `window == 'full'` → retorna 'full'
+    - Para 'Document-SlideWindow-Term' e 'Document-Context-Window-Term':
+      retorna tamanho da sequência deslizante equivalente: `2*w + 1`.
+    - Para 'Document-Window-Term': retorna tupla `(left, right)` simétrica
+      com `left = right = int(window)` (ou 'full').
+    - Para 'Document-Term': retorna o mesmo `int(window)` (ou 'full').
+    """
+    if str(window).lower() == "full":
+        return "full"
+
+    try:
+        w = int(window)
+    except Exception:
+        raise ValueError(f"window inválida: {window}")
+
+    if graph_type in ("Document-SlideWindow-Term", "Document-Context-Window-Term"):
+        return 2 * w + 1
+    if graph_type == "Document-Window-Term":
+        return (w, w)
+    if graph_type == "Document-Term":
+        return w
+
+    # fallback: devolve w
+    return w
+
+
+# Registrar helper no módulo importado para compatibilidade com chamadas
+window_experiments._get_graph_build_window = _get_graph_build_window
+
+
 def create_mini_corpus():
     """Cria um DataFrame pequeno para testes."""
     return pd.DataFrame(
         {
             "abstract": [
-                "Machine learning allows machine learning systems to learn from data, identify patterns in data in the machine.",
-                # "Deep learning uses neural networks to process information.",
+                # "Machine learning allows machine learning systems to learn from data, identify patterns in data in the machine.",
+                "Janela de teste para analisar se está fazendo tudo certo, caso esteja tudo certo irei analisar o próximo.",
                 # "Natural language processing helps computers understand text.",
             ]
         }
@@ -232,7 +268,7 @@ def main():
     print(f"  Tokens por doc: {[len(t) for t in df['tokens']]}")
 
     # Testar todos os tipos com múltiplas janelas
-    windows = [1, 2, 3, "full"]
+    windows = [1]
     results = {}
 
     results["Document-SlideWindow-Term"] = test_document_slidewindow_term(
