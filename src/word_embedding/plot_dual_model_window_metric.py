@@ -429,7 +429,7 @@ def plot_dual_model_window_metric(
 
     ax_metric.set_ylabel(metric.upper())
     ax_metric.set_title(
-        f"W2V window on X, {metric.upper()} on Y: W2V self vs best SBM match"
+        f"{metric.upper()} | Seed:{seed} | Samples:{number_of_samples} | W2V self-comparison vs SBM cross-comparison"
     )
     ax_metric.grid(True, axis="y", alpha=0.25)
 
@@ -452,31 +452,28 @@ def plot_dual_model_window_metric(
         if w2v_window not in x_map:
             continue
 
-        token_count = _window_to_token_count(sbm_window)
-
-        if token_count is None:
-            continue
-
         sbm_points.append(
             {
                 "x": x_map[w2v_window],
-                "token_count": int(token_count),
+                "sbm_window": sbm_window,
+                "sbm_label": _window_token_label(sbm_window),
             }
         )
 
     if sbm_points:
-        unique_token_counts = sorted(
-            {point["token_count"] for point in sbm_points}
+        unique_sbm_windows = sorted(
+            {point["sbm_window"] for point in sbm_points},
+            key=_window_sort_key,
         )
 
-        # Fixed categorical spacing for the bottom plot.
+        # Fixed categorical spacing, including "Full".
         y_map = {
-            token_count: idx
-            for idx, token_count in enumerate(unique_token_counts)
+            sbm_window: idx
+            for idx, sbm_window in enumerate(unique_sbm_windows)
         }
 
         sbm_x_values = [point["x"] for point in sbm_points]
-        sbm_y_values = [y_map[point["token_count"]] for point in sbm_points]
+        sbm_y_values = [y_map[point["sbm_window"]] for point in sbm_points]
 
         ax_sbm.scatter(
             sbm_x_values,
@@ -489,24 +486,26 @@ def plot_dual_model_window_metric(
         )
 
         for point in sbm_points:
+            y_value = y_map[point["sbm_window"]]
+
             ax_sbm.annotate(
-                f"{point['token_count']}t",
-                (point["x"], y_map[point["token_count"]]),
+                point["sbm_label"],
+                (point["x"], y_value),
                 textcoords="offset points",
-                xytext=(0, -12),
-                ha="center",
+                xytext=(8, 0),
+                ha="left",
+                va="center",
                 fontsize=8,
                 color="#d62728",
             )
 
-        ax_sbm.set_yticks(range(len(unique_token_counts)))
+        ax_sbm.set_yticks(range(len(unique_sbm_windows)))
         ax_sbm.set_yticklabels(
-            [f"{token_count}t" for token_count in unique_token_counts]
+            [_window_token_label(window) for window in unique_sbm_windows]
         )
 
-        # Keeps smaller windows closer to the middle line and larger windows lower.
-        ax_sbm.invert_yaxis()
-        ax_sbm.set_ylim(len(unique_token_counts) - 0.5, -0.5)
+        # Smaller windows stay near the middle line, "Full" stays at the bottom.
+        ax_sbm.set_ylim(len(unique_sbm_windows) - 0.5, -0.5)
 
     else:
         ax_sbm.text(
@@ -558,14 +557,18 @@ def plot_dual_model_window_metric(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     out_file = out_dir / f"dual_model_window_{metric_folder}.png"
-    plt.tight_layout()
-    plt.savefig(out_file, dpi=180)
+    fig.subplots_adjust(
+        top=0.88,
+        bottom=0.10,
+        left=0.08,
+        right=0.98,
+        hspace=0.08,
+    )
+
+    fig.savefig(out_file, dpi=180, bbox_inches="tight")
     plt.close(fig)
 
     print(f"[INFO] Saved: {out_file}")
-    print(f"[INFO] W2V summary rows: {len(df_w2v)}")
-    print(f"[INFO] SBM summary rows: {len(df_sbm)}")
-    print(f"[INFO] W2V windows: {windows}")
     return True
 
 
