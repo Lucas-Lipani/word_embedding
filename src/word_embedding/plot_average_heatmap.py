@@ -114,18 +114,24 @@ def plot_average_heatmaps(analysis_dir: Path):
         print(f"[HINT] Encontrado: {df.columns.tolist()}", file=sys.stderr)
         return False
 
-    # Derivar métricas disponíveis (excluir colunas de identificação)
-    exclude_cols = {
-        "config_x",
-        "config_y",
-        "run_x",
-        "run_y",
-        row_key,
-        col_key,
-        "model_x",
-        "model_y",
-    }
-    metric_cols = [c for c in df.columns if c not in exclude_cols]
+    # Plotar somente métricas reais.
+    # Evita tentar gerar heatmap de metadados como comparison_type,
+    # source_run, null_repeat ou k_source.
+    preferred_metrics = [
+        "vi",
+        "nvi",
+        "po",
+        "npo",
+        "mi",
+        "ami",
+        "nmi",
+        "anmi",
+        "ari",
+        "rmi",
+        "nrmi",
+    ]
+
+    metric_cols = [metric for metric in preferred_metrics if metric in df.columns]
 
     if not metric_cols:
         print(f"[WARN] Nenhuma métrica encontrada", file=sys.stderr)
