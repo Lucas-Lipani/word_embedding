@@ -946,7 +946,7 @@ def plot_dual_model_window_metric(
             folder_name="w2vxsbm",
         )
 
-    if not df_w2v_self.empty or not df_w2v_random.empty:
+    if not df_w2v_random.empty:
         made_any |= _plot_anchor_candidate(
             seed=seed,
             number_of_samples=number_of_samples,
@@ -960,8 +960,10 @@ def plot_dual_model_window_metric(
             output_dir=w2v_random_output_root,
             folder_name="w2vxrandom",
         )
+    else:
+        print("[INFO] Skipping w2vxrandom: missing W2V × Random data.")
 
-    if not df_sbm_self.empty or not df_sbm_random.empty:
+    if not df_sbm_random.empty:
         made_any |= _plot_anchor_candidate(
             seed=seed,
             number_of_samples=number_of_samples,
@@ -975,8 +977,10 @@ def plot_dual_model_window_metric(
             output_dir=sbm_random_output_root,
             folder_name="sbmxrandom",
         )
+    else:
+        print("[INFO] Skipping sbmxrandom: missing SBM × Random data.")
 
-    if not df_w2v_self.empty or not df_w2v_sbm.empty or not df_w2v_random.empty:
+    if not df_w2v_sbm.empty and not df_w2v_random.empty:
         made_any |= _plot_w2v_sbm_random(
             seed=seed,
             number_of_samples=number_of_samples,
@@ -986,6 +990,8 @@ def plot_dual_model_window_metric(
             df_random_best=df_w2v_random,
             output_dir=combined_output_root,
         )
+    else:
+        print("[INFO] Skipping w2vxsbmxrandom: missing W2V × SBM or W2V × Random data.")
 
     if not made_any:
         print(f"[WARN] No plot was generated for metric '{metric}'.")
