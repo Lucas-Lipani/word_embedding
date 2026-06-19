@@ -368,51 +368,51 @@ def compare_intra_windows_full_heatmap(
                     if not runs_y:
                         continue
 
-                    # ---- IMPORTANT CHANGE ----
-                    # Balanced off-diagonal comparison.
-                    # Use the same number of run pairs as the diagonal:
-                    # for 10 runs, C(10, 2) = 45 comparisons.
-                    common_runs = sorted(set(runs_x).intersection(set(runs_y)))
-
-                    for rx, ry in combinations(common_runs, 2):
+                    # Full off-diagonal comparison.
+                    # Compare every run from window_x with every run from window_y.
+                    # The reverse heatmap cell is added by symmetry, so we do not recompute it.
+                    for rx in runs_x:
                         sx = idx.get((cx, wx, rx))
-                        sy = idx.get((cy, wy, ry))
-
-                        if sx is None or sy is None:
+                        if sx is None:
                             continue
 
-                        common = sx.index.intersection(sy.index)
-                        if len(common) < min_common_terms:
-                            continue
+                        for ry in runs_y:
+                            sy = idx.get((cy, wy, ry))
+                            if sy is None:
+                                continue
 
-                        lx = sx.loc[common].to_numpy()
-                        ly = sy.loc[common].to_numpy()
+                            common = sx.index.intersection(sy.index)
+                            if len(common) < min_common_terms:
+                                continue
 
-                        try:
-                            metrics = _compare_metrics(lx, ly)
-                        except ValueError:
-                            continue
+                            lx = sx.loc[common].to_numpy()
+                            ly = sy.loc[common].to_numpy()
 
-                        row = {
-                            "config_x": cx,
-                            "config_y": cy,
-                            "run_x": rx,
-                            "run_y": ry,
-                            "window_x": wx,
-                            "window_y": wy,
-                            "model_x": model_name,
-                            "model_y": model_name,
-                            "n_common_terms": int(len(common)),
-                        }
-                        row.update(metrics)
-                        rows.append(row)
+                            try:
+                                metrics = _compare_metrics(lx, ly)
+                            except ValueError:
+                                continue
 
-                        # Add symmetric entry to fill the opposite heatmap cell.
-                        row2 = dict(row)
-                        row2["config_x"], row2["config_y"] = row["config_y"], row["config_x"]
-                        row2["window_x"], row2["window_y"] = row["window_y"], row["window_x"]
-                        row2["run_x"], row2["run_y"] = row["run_y"], row["run_x"]
-                        rows.append(row2)
+                            row = {
+                                "config_x": cx,
+                                "config_y": cy,
+                                "run_x": rx,
+                                "run_y": ry,
+                                "window_x": wx,
+                                "window_y": wy,
+                                "model_x": model_name,
+                                "model_y": model_name,
+                                "n_common_terms": int(len(common)),
+                            }
+                            row.update(metrics)
+                            rows.append(row)
+
+                            # Add symmetric entry to fill the opposite heatmap cell.
+                            row2 = dict(row)
+                            row2["config_x"], row2["config_y"] = row["config_y"], row["config_x"]
+                            row2["window_x"], row2["window_y"] = row["window_y"], row["window_x"]
+                            row2["run_x"], row2["run_y"] = row["run_y"], row["run_x"]
+                            rows.append(row2)
 
     return rows
 
