@@ -1,4 +1,5 @@
 from pathlib import Path
+from itertools import combinations
 import pandas as pd
 import argparse
 import sys
@@ -368,63 +369,50 @@ def compare_intra_windows_full_heatmap(
                         continue
 
                     # ---- IMPORTANT CHANGE ----
-                    # Use run x run but cap to avoid explosion
-                    # You can increase cap if needed
-                    cap = 3  # compare only first 3 runs of each side (fast + fills heatmap)
-                    runs_x_cap = runs_x[:cap]
-                    runs_y_cap = runs_y[:cap]
+                    # Balanced off-diagonal comparison.
+                    # Use the same number of run pairs as the diagonal:
+                    # for 10 runs, C(10, 2) = 45 comparisons.
+                    common_runs = sorted(set(runs_x).intersection(set(runs_y)))
 
-                    for rx in runs_x_cap:
+                    for rx, ry in combinations(common_runs, 2):
                         sx = idx.get((cx, wx, rx))
-                        if sx is None:
+                        sy = idx.get((cy, wy, ry))
+
+                        if sx is None or sy is None:
                             continue
 
-                        for ry in runs_y_cap:
-                            sy = idx.get((cy, wy, ry))
-                            if sy is None:
-                                continue
+                        common = sx.index.intersection(sy.index)
+                        if len(common) < min_common_terms:
+                            continue
 
-                            common = sx.index.intersection(sy.index)
-                            if len(common) < min_common_terms:
-                                continue
+                        lx = sx.loc[common].to_numpy()
+                        ly = sy.loc[common].to_numpy()
 
-                            lx = sx.loc[common].to_numpy()
-                            ly = sy.loc[common].to_numpy()
+                        try:
+                            metrics = _compare_metrics(lx, ly)
+                        except ValueError:
+                            continue
 
-                            try:
-                                metrics = _compare_metrics(lx, ly)
-                            except ValueError:
-                                continue
+                        row = {
+                            "config_x": cx,
+                            "config_y": cy,
+                            "run_x": rx,
+                            "run_y": ry,
+                            "window_x": wx,
+                            "window_y": wy,
+                            "model_x": model_name,
+                            "model_y": model_name,
+                            "n_common_terms": int(len(common)),
+                        }
+                        row.update(metrics)
+                        rows.append(row)
 
-                            row = {
-                                "config_x": cx,
-                                "config_y": cy,
-                                "run_x": rx,
-                                "run_y": ry,
-                                "window_x": wx,
-                                "window_y": wy,
-                                "model_x": model_name,
-                                "model_y": model_name,
-                                "n_common_terms": int(len(common)),
-                            }
-                            row.update(metrics)
-                            rows.append(row)
-
-                            # Add symmetric entry to make heatmap full
-                            row2 = dict(row)
-                            row2["config_x"], row2["config_y"] = (
-                                row["config_y"],
-                                row["config_x"],
-                            )
-                            row2["window_x"], row2["window_y"] = (
-                                row["window_y"],
-                                row["window_x"],
-                            )
-                            row2["run_x"], row2["run_y"] = (
-                                row["run_y"],
-                                row["run_x"],
-                            )
-                            rows.append(row2)
+                        # Add symmetric entry to fill the opposite heatmap cell.
+                        row2 = dict(row)
+                        row2["config_x"], row2["config_y"] = row["config_y"], row["config_x"]
+                        row2["window_x"], row2["window_y"] = row["window_y"], row["window_x"]
+                        row2["run_x"], row2["run_y"] = row["run_y"], row["run_x"]
+                        rows.append(row2)
 
     return rows
 
