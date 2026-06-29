@@ -55,6 +55,19 @@ def _load_comparison_type(analysis_dir: Path) -> str:
 
     return comparison_type
 
+def _load_is_context(analysis_dir: Path | None) -> bool:
+    if analysis_dir is None:
+        return False
+
+    config_file = analysis_dir / "config.json"
+    if not config_file.exists():
+        return False
+
+    with open(config_file, "r", encoding="utf-8") as handle:
+        config = json.load(handle)
+
+    return bool(config.get("graph", {}).get("context", False))
+
 
 def _find_analysis_dir(
     analyses_root: Path,
@@ -108,6 +121,7 @@ def _find_analysis_dir(
     return candidates[-1][1]
 
 
+
 def _try_find_analysis_dir(
     analyses_root: Path,
     seed: int,
@@ -125,8 +139,7 @@ def _try_find_analysis_dir(
         print(f"[WARN] {exc}")
         return None
 
-
-def _window_to_token_count(window) -> int | None:
+def _window_to_token_count(window, is_context: bool = False) -> int | None:
     text = str(window)
     if text.lower() == "full":
         return None
@@ -139,17 +152,22 @@ def _window_to_token_count(window) -> int | None:
             return None
 
     try:
-        return 2 * int(text) + 1
+        value = int(text)
     except (TypeError, ValueError):
         return None
 
+    if is_context:
+        return value
 
-def _window_token_label(window: str) -> str:
+    return 2 * value + 1
+
+
+def _window_token_label(window: str, is_context: bool = False) -> str:
     text = str(window)
     if text.lower() == "full":
         return "Full"
 
-    token_count = _window_to_token_count(text)
+    token_count = _window_to_token_count(text, is_context=is_context)
     if token_count is None:
         return text
 
@@ -158,6 +176,10 @@ def _window_token_label(window: str) -> str:
 
 def _model_label(model: str) -> str:
     return MODEL_LABELS.get(model, str(model).upper())
+
+
+def _dimension_label(is_context: bool) -> str:
+    return "context size" if is_context else "window"
 
 
 def _load_metric_dataframe(
@@ -284,6 +306,7 @@ def _summarize_best_cross(
     *,
     candidate_window_column: str,
     metric_column: str,
+    is_context: bool = False,
 ) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(
@@ -319,7 +342,7 @@ def _summarize_best_cross(
         best_metric = group["metric"].max()
         best_rows = group[group["metric"] == best_metric].copy()
         best_rows["candidate_token_count"] = best_rows["candidate_window"].map(
-            _window_to_token_count
+            lambda w: _window_to_token_count(w, is_context=is_context)
         )
 
         # Stable tie-break: prefer smaller candidate token window, keeping Full last.
@@ -359,6 +382,7 @@ def _metric_axis_limits(series_list: list[pd.Series]) -> tuple[float, float] | N
     return y_min, y_max
 
 
+
 def _plot_anchor_candidate(
     *,
     seed: int,
@@ -372,18 +396,29 @@ def _plot_anchor_candidate(
     candidate_metric_column: str,
     output_dir: Path,
     folder_name: str,
+    is_context: bool = False,
 ) -> bool:
     anchor_label = _model_label(anchor_model)
     candidate_label = _model_label(candidate_model)
+    dimension_label = _dimension_label(is_context)
 
     windows = sorted(
-        set(df_anchor_self.get("anchor_window", pd.Series(dtype=str)).dropna().astype(str).unique())
-        | set(df_candidate_best.get("anchor_window", pd.Series(dtype=str)).dropna().astype(str).unique()),
+        set(
+            df_anchor_self.get("anchor_window", pd.Series(dtype=str))
+            .dropna()
+            .astype(str)
+            .unique()
+        )
+        | set(
+            df_candidate_best.get("anchor_window", pd.Series(dtype=str))
+            .dropna()
+            .astype(str)
+            .unique()
+        ),
         key=_window_sort_key,
     )
 
     if not windows:
-        print(f"[WARN] No windows found for {anchor_label} × {candidate_label}.")
         return False
 
     x_map = {window: idx for idx, window in enumerate(windows)}
@@ -393,11 +428,17 @@ def _plot_anchor_candidate(
     top_candidate = df_candidate_best.set_index("anchor_window").reindex(windows)
 
     anchor_values = pd.to_numeric(
-        top_anchor.get(f"{anchor_model}_self_metric", pd.Series(index=windows, dtype=float)),
+        top_anchor.get(
+            f"{anchor_model}_self_metric",
+            pd.Series(index=windows, dtype=float),
+        ),
         errors="coerce",
     )
     candidate_values = pd.to_numeric(
-        top_candidate.get(candidate_metric_column, pd.Series(index=windows, dtype=float)),
+        top_candidate.get(
+            candidate_metric_column,
+            pd.Series(index=windows, dtype=float),
+        ),
         errors="coerce",
     )
 
@@ -431,7 +472,10 @@ def _plot_anchor_candidate(
     for window in windows:
         x_value = x_map[window]
 
-        if window in top_anchor.index and pd.notna(top_anchor.loc[window].get(f"{anchor_model}_self_metric")):
+        if (
+            window in top_anchor.index
+            and pd.notna(top_anchor.loc[window].get(f"{anchor_model}_self_metric"))
+        ):
             y_value = float(top_anchor.loc[window, f"{anchor_model}_self_metric"])
             ax_metric.annotate(
                 f"{y_value:.3f}",
@@ -444,7 +488,10 @@ def _plot_anchor_candidate(
                 color=MODEL_COLORS.get(anchor_model),
             )
 
-        if window in top_candidate.index and pd.notna(top_candidate.loc[window].get(candidate_metric_column)):
+        if (
+            window in top_candidate.index
+            and pd.notna(top_candidate.loc[window].get(candidate_metric_column))
+        ):
             y_value = float(top_candidate.loc[window, candidate_metric_column])
             ax_metric.annotate(
                 f"{y_value:.3f}",
@@ -479,11 +526,15 @@ def _plot_anchor_candidate(
         candidate_window = str(row[candidate_window_column])
         if anchor_window not in x_map:
             continue
+
         candidate_points.append(
             {
                 "x": x_map[anchor_window],
                 "candidate_window": candidate_window,
-                "candidate_label": _window_token_label(candidate_window),
+                "candidate_label": _window_token_label(
+                    candidate_window,
+                    is_context=is_context,
+                ),
             }
         )
 
@@ -521,7 +572,10 @@ def _plot_anchor_candidate(
 
         ax_bottom.set_yticks(range(len(unique_candidate_windows)))
         ax_bottom.set_yticklabels(
-            [_window_token_label(window) for window in unique_candidate_windows]
+            [
+                _window_token_label(window, is_context=is_context)
+                for window in unique_candidate_windows
+            ]
         )
         ax_bottom.set_ylim(len(unique_candidate_windows) - 0.5, -0.5)
     else:
@@ -534,17 +588,22 @@ def _plot_anchor_candidate(
             va="center",
         )
 
-    ax_bottom.set_ylabel(f"Best {candidate_label} window")
+    ax_bottom.set_ylabel(f"Best {candidate_label} {dimension_label}")
     ax_bottom.grid(True, axis="y", alpha=0.25)
 
-    x_labels = [_window_token_label(window) for window in windows]
+    x_labels = [_window_token_label(window, is_context=is_context) for window in windows]
     ax_bottom.set_xticks(x_values)
     ax_bottom.set_xticklabels(x_labels)
     ax_bottom.tick_params(
-        axis="x", top=True, labeltop=True, bottom=False, labelbottom=False, pad=4
+        axis="x",
+        top=True,
+        labeltop=True,
+        bottom=False,
+        labelbottom=False,
+        pad=4,
     )
     ax_bottom.xaxis.set_label_position("top")
-    ax_bottom.set_xlabel(f"{anchor_label} window", labelpad=8)
+    ax_bottom.set_xlabel(f"{anchor_label} {dimension_label}", labelpad=8)
     ax_bottom.spines["top"].set_visible(True)
     ax_bottom.spines["top"].set_linewidth(1.2)
 
@@ -579,16 +638,33 @@ def _plot_w2v_sbm_random(
     df_sbm_best: pd.DataFrame,
     df_random_best: pd.DataFrame,
     output_dir: Path,
+    is_context: bool = False,
 ) -> bool:
+    dimension_label = _dimension_label(is_context)
+
     windows = sorted(
-        set(df_w2v_self.get("anchor_window", pd.Series(dtype=str)).dropna().astype(str).unique())
-        | set(df_sbm_best.get("anchor_window", pd.Series(dtype=str)).dropna().astype(str).unique())
-        | set(df_random_best.get("anchor_window", pd.Series(dtype=str)).dropna().astype(str).unique()),
+        set(
+            df_w2v_self.get("anchor_window", pd.Series(dtype=str))
+            .dropna()
+            .astype(str)
+            .unique()
+        )
+        | set(
+            df_sbm_best.get("anchor_window", pd.Series(dtype=str))
+            .dropna()
+            .astype(str)
+            .unique()
+        )
+        | set(
+            df_random_best.get("anchor_window", pd.Series(dtype=str))
+            .dropna()
+            .astype(str)
+            .unique()
+        ),
         key=_window_sort_key,
     )
 
     if not windows:
-        print("[WARN] No windows found for W2V × SBM × Random.")
         return False
 
     x_map = {window: idx for idx, window in enumerate(windows)}
@@ -599,7 +675,10 @@ def _plot_w2v_sbm_random(
     top_random = df_random_best.set_index("anchor_window").reindex(windows)
 
     w2v_values = pd.to_numeric(
-        top_w2v.get("w2v+kmeans_self_metric", pd.Series(index=windows, dtype=float)),
+        top_w2v.get(
+            "w2v+kmeans_self_metric",
+            pd.Series(index=windows, dtype=float),
+        ),
         errors="coerce",
     )
     sbm_values = pd.to_numeric(
@@ -650,7 +729,10 @@ def _plot_w2v_sbm_random(
     for window in windows:
         x_value = x_map[window]
 
-        if window in top_w2v.index and pd.notna(top_w2v.loc[window].get("w2v+kmeans_self_metric")):
+        if (
+            window in top_w2v.index
+            and pd.notna(top_w2v.loc[window].get("w2v+kmeans_self_metric"))
+        ):
             y_value = float(top_w2v.loc[window, "w2v+kmeans_self_metric"])
             ax_metric.annotate(
                 f"{y_value:.3f}",
@@ -663,7 +745,10 @@ def _plot_w2v_sbm_random(
                 color=MODEL_COLORS["w2v+kmeans"],
             )
 
-        if window in top_sbm.index and pd.notna(top_sbm.loc[window].get("sbm_metric")):
+        if (
+            window in top_sbm.index
+            and pd.notna(top_sbm.loc[window].get("sbm_metric"))
+        ):
             y_value = float(top_sbm.loc[window, "sbm_metric"])
             ax_metric.annotate(
                 f"{y_value:.3f}",
@@ -676,7 +761,10 @@ def _plot_w2v_sbm_random(
                 color=MODEL_COLORS["sbm"],
             )
 
-        if window in top_random.index and pd.notna(top_random.loc[window].get("random_metric")):
+        if (
+            window in top_random.index
+            and pd.notna(top_random.loc[window].get("random_metric"))
+        ):
             y_value = float(top_random.loc[window, "random_metric"])
             ax_metric.annotate(
                 f"{y_value:.3f}",
@@ -710,12 +798,16 @@ def _plot_w2v_sbm_random(
         anchor_window = str(row["anchor_window"])
         if anchor_window not in x_map:
             continue
+
         bottom_points.append(
             {
                 "x": x_map[anchor_window] - 0.16,
                 "window": str(row["sbm_window"]),
                 "model": "sbm",
-                "label": _window_token_label(str(row["sbm_window"])),
+                "label": _window_token_label(
+                    str(row["sbm_window"]),
+                    is_context=is_context,
+                ),
                 "annotation_offset": (-8, 0),
                 "ha": "right",
             }
@@ -727,12 +819,16 @@ def _plot_w2v_sbm_random(
         anchor_window = str(row["anchor_window"])
         if anchor_window not in x_map:
             continue
+
         bottom_points.append(
             {
                 "x": x_map[anchor_window] + 0.16,
                 "window": str(row["random_window"]),
                 "model": "random_k",
-                "label": _window_token_label(str(row["random_window"])),
+                "label": _window_token_label(
+                    str(row["random_window"]),
+                    is_context=is_context,
+                ),
                 "annotation_offset": (8, 0),
                 "ha": "left",
             }
@@ -756,7 +852,7 @@ def _plot_w2v_sbm_random(
                 color=MODEL_COLORS[model],
                 marker=MODEL_MARKERS[model],
                 s=70,
-                label=f"Best {_model_label(model)} window",
+                label=f"Best {_model_label(model)} {dimension_label}",
                 zorder=5,
             )
 
@@ -774,7 +870,10 @@ def _plot_w2v_sbm_random(
 
         ax_bottom.set_yticks(range(len(unique_bottom_windows)))
         ax_bottom.set_yticklabels(
-            [_window_token_label(window) for window in unique_bottom_windows]
+            [
+                _window_token_label(window, is_context=is_context)
+                for window in unique_bottom_windows
+            ]
         )
         ax_bottom.set_ylim(len(unique_bottom_windows) - 0.5, -0.5)
     else:
@@ -787,17 +886,22 @@ def _plot_w2v_sbm_random(
             va="center",
         )
 
-    ax_bottom.set_ylabel("Best matched window")
+    ax_bottom.set_ylabel(f"Best matched {dimension_label}")
     ax_bottom.grid(True, axis="y", alpha=0.25)
 
-    x_labels = [_window_token_label(window) for window in windows]
+    x_labels = [_window_token_label(window, is_context=is_context) for window in windows]
     ax_bottom.set_xticks(x_values)
     ax_bottom.set_xticklabels(x_labels)
     ax_bottom.tick_params(
-        axis="x", top=True, labeltop=True, bottom=False, labelbottom=False, pad=4
+        axis="x",
+        top=True,
+        labeltop=True,
+        bottom=False,
+        labelbottom=False,
+        pad=4,
     )
     ax_bottom.xaxis.set_label_position("top")
-    ax_bottom.set_xlabel("W2V window", labelpad=8)
+    ax_bottom.set_xlabel(f"W2V {dimension_label}", labelpad=8)
     ax_bottom.spines["top"].set_visible(True)
     ax_bottom.spines["top"].set_linewidth(1.2)
 
@@ -878,6 +982,17 @@ def plot_dual_model_window_metric(
     ]:
         print(f"[INFO] Selected {label} analysis: {path.name if path else 'missing'}")
 
+    is_context = any(
+        _load_is_context(path)
+        for path in [
+            w2v_self_dir,
+            sbm_self_dir,
+            w2v_sbm_dir,
+            w2v_random_dir,
+            sbm_random_dir,
+        ]
+    )
+
     df_w2v_self = _summarize_self(
         _collect_self_rows(w2v_self_dir, metric, "w2v_vs_w2v", "w2v+kmeans"),
         "w2v+kmeans_self_metric",
@@ -897,6 +1012,7 @@ def plot_dual_model_window_metric(
         ),
         candidate_window_column="sbm_window",
         metric_column="sbm_metric",
+        is_context=is_context,
     )
 
     df_w2v_random = _summarize_best_cross(
@@ -909,6 +1025,7 @@ def plot_dual_model_window_metric(
         ),
         candidate_window_column="random_window",
         metric_column="random_metric",
+        is_context=is_context,
     )
 
     df_sbm_random = _summarize_best_cross(
@@ -921,9 +1038,9 @@ def plot_dual_model_window_metric(
         ),
         candidate_window_column="random_window",
         metric_column="random_metric",
+        is_context=is_context,
     )
 
-    # Choose output roots close to the analysis that provides the cross-comparison.
     w2v_sbm_output_root = w2v_sbm_dir or DEFAULT_ANALYSES_ROOT
     w2v_random_output_root = w2v_random_dir or DEFAULT_ANALYSES_ROOT
     sbm_random_output_root = sbm_random_dir or DEFAULT_ANALYSES_ROOT
@@ -944,6 +1061,7 @@ def plot_dual_model_window_metric(
             candidate_metric_column="sbm_metric",
             output_dir=w2v_sbm_output_root,
             folder_name="w2vxsbm",
+            is_context=is_context,
         )
 
     if not df_w2v_random.empty:
@@ -959,6 +1077,7 @@ def plot_dual_model_window_metric(
             candidate_metric_column="random_metric",
             output_dir=w2v_random_output_root,
             folder_name="w2vxrandom",
+            is_context=is_context,
         )
     else:
         print("[INFO] Skipping w2vxrandom: missing W2V × Random data.")
@@ -976,6 +1095,7 @@ def plot_dual_model_window_metric(
             candidate_metric_column="random_metric",
             output_dir=sbm_random_output_root,
             folder_name="sbmxrandom",
+            is_context=is_context,
         )
     else:
         print("[INFO] Skipping sbmxrandom: missing SBM × Random data.")
@@ -989,6 +1109,7 @@ def plot_dual_model_window_metric(
             df_sbm_best=df_w2v_sbm,
             df_random_best=df_w2v_random,
             output_dir=combined_output_root,
+            is_context=is_context,
         )
     else:
         print("[INFO] Skipping w2vxsbmxrandom: missing W2V × SBM or W2V × Random data.")
@@ -998,7 +1119,6 @@ def plot_dual_model_window_metric(
         return False
 
     return True
-
 
 def main():
     parser = argparse.ArgumentParser()
